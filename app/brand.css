@@ -1,0 +1,6 @@
+/* U Ticket 3 brand override for the existing marketplace components. */
+.logo{font-size:0!important}
+.logo::after{content:"U Ticket 3";font:800 20px 'Plus Jakarta Sans'}
+.hero-content .eyebrow,.auth-card .eyebrow{font-size:0}
+.hero-content .eyebrow::after{content:"U TICKET 3 PRESENTS";font-size:10px}
+.auth-card .eyebrow::after{content:"U TICKET 3 ACCOUNT";font-size:10px}
