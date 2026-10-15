@@ -722,7 +722,13 @@ function Detail({
 
   const selectedType = ticketTypes[ticketIndex] || ticketTypes[0];
 
-  const handleStartPurchase = () => {
+  const handleStartPurchaseForTier = (tierIndex: number) => {
+    setTicketIndex(tierIndex);
+    const tier = ticketTypes[tierIndex] || ticketTypes[0];
+    if (tier.available_supply <= 0) {
+      alert("This ticket tier is currently sold out. You can buy verified resale tickets below or join the waitlist.");
+      return;
+    }
     if (!authed) {
       onRequireAuth();
       return;
@@ -731,7 +737,7 @@ function Detail({
     setPowModalOpen(true);
     setPowProgress(10);
     setPowStatusText("Initializing anti-bot queue challenge…");
-    const challenge = `uticket3-pow-${event.id}-${selectedType.id}-${Date.now()}`;
+    const challenge = `uticket3-pow-${event.id}-${tier.id}-${Date.now()}`;
 
     solveProofOfWork(challenge, 3, (nonce, hash) => {
       setPowNonce(nonce);
@@ -744,7 +750,7 @@ function Detail({
         setPowStatusText(`PoW Verified! Golden Nonce: ${res.nonce}`);
         setTimeout(() => {
           setPowModalOpen(false);
-          executeReservation();
+          executeReservation(tier);
         }, 700);
       })
       .catch((err) => {
@@ -754,11 +760,12 @@ function Detail({
       });
   };
 
-  const executeReservation = async () => {
+  const executeReservation = async (targetTier?: TicketType) => {
+    const tier = targetTier || selectedType;
     setReserving(true);
     setError("");
     try {
-      const reservation = await reserveTickets(selectedType.id, qty);
+      const reservation = await reserveTickets(tier.id, qty);
       onReserved(reservation);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Failed to reserve tickets";
@@ -767,10 +774,10 @@ function Detail({
       } else if (msg.includes("AUTH_REQUIRED")) {
         onRequireAuth();
       } else {
-        console.warn("Using demo reservation fallback for ticketType:", selectedType.id, msg);
+        console.warn("Using demo reservation fallback for ticketType:", tier.id, msg);
         const mockReservation: Reservation = {
           id: "res-demo-" + Date.now(),
-          ticket_type_id: selectedType.id,
+          ticket_type_id: tier.id,
           quantity: qty,
           expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
           status: "ACTIVE",
@@ -802,6 +809,12 @@ function Detail({
       return;
     }
     if (!sellTokenId || !sellPriceEth) return;
+    const priceNum = parseFloat(sellPriceEth);
+    // Strict 30% cap check (Original ~0.038 ETH -> Max 30% = 0.0494 ETH)
+    if (priceNum > 0.0495) {
+      alert("ราคาขายต่อเกินเพดานที่กำหนด! ระบบจำกัดเพดานราคาห้ามขายเกิน 30% (สูงสุดไม่เกิน 0.049 ETH) เพื่อป้องกันการเก็งกำไร");
+      return;
+    }
     writeContract({
       address: ticketContractAddress,
       abi: ticketContractAbi,
@@ -821,6 +834,9 @@ function Detail({
     hour: "2-digit",
     minute: "2-digit",
   });
+
+  // Calculate live total available tickets across all tiers
+  const totalAvailable = ticketTypes.reduce((acc, t) => acc + (t.available_supply || 0), 0);
 
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "10px 0 60px" }}>
@@ -847,7 +863,7 @@ function Detail({
           <div className="ref-event-title-wrap">
             <div className="ref-verified-pill">
               <span />
-              Official Verified Resale
+              Official Verified Primary & Resale
             </div>
             <h1 className="ref-event-title">{event.title}</h1>
           </div>
@@ -940,25 +956,52 @@ function Detail({
               <span className="ref-connect-prompt">Connect wallet to see friends</span>
             </div>
           </div>
+
+          {/* Quantity selector for ticket reservation */}
+          <div className="ref-attendees-card" style={{ marginTop: "10px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <strong style={{ fontSize: "14px", color: "#111827", display: "block" }}>เลือกจำนวนตั๋วที่ต้องการจอง</strong>
+                <span style={{ fontSize: "12px", color: "#6b7280" }}>จำกัดสูงสุด 6 ใบต่อคำสั่งซื้อ (ระบบล็อกคิว 10 นาที)</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <button
+                  onClick={() => setQty(Math.max(1, qty - 1))}
+                  style={{ width: "32px", height: "32px", borderRadius: "6px", border: "1px solid #d1d5db", background: "#fff", display: "grid", placeItems: "center" }}
+                  aria-label="Decrease"
+                >
+                  <Minus size={14} />
+                </button>
+                <b style={{ fontSize: "16px", minWidth: "20px", textAlign: "center" }}>{qty}</b>
+                <button
+                  onClick={() => setQty(Math.min(6, qty + 1))}
+                  style={{ width: "32px", height: "32px", borderRadius: "6px", border: "1px solid #d1d5db", background: "#fff", display: "grid", placeItems: "center" }}
+                  aria-label="Increase"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Right Column: Tickets Section */}
         <div className="ref-right-col">
           <div className="ref-tickets-head">
             <div className="ref-tickets-title-wrap">
-              <h2 className="ref-tickets-title">Tickets</h2>
+              <h2 className="ref-tickets-title">Tickets & Booking</h2>
               <div className="ref-tickets-counts">
                 <span className="ref-avail-dot" />
-                <span><b>12 available</b></span>
+                <span><b>{totalAvailable} available</b></span>
                 <span>•</span>
                 <span>14 sold</span>
                 <span>•</span>
                 <span>74 wanted</span>
               </div>
             </div>
-            <div className="ref-cap-badge">
+            <div className="ref-cap-badge" style={{ background: "#eff6ff", borderColor: "#bfdbfe", color: "#1e40af" }}>
               <Lock size={12} />
-              Capped at original price + 20% max
+              เพดานราคา Resale สูงสุดไม่เกิน +30%
             </div>
           </div>
 
@@ -982,111 +1025,75 @@ function Detail({
           </div>
 
           <div className="ref-section-subhead">
-            <span>Entrance tickets</span>
-            <small>All tickets minted as secure ERC-721 NFTs</small>
+            <span>Entrance tickets (จองบัตรจริง & ซื้อขายต่อ)</span>
+            <small>ระบบจองตั๋วตรง + ล็อกบัตร 10 นาที + ตั๋ว NFT ERC-721</small>
           </div>
 
-          {/* Ticket Tier 1: Active / Available with PoW & Resale */}
-          <div className="ref-ticket-card highlighted">
-            <div className="ref-ticket-card-top">
-              <div className="ref-tier-info">
-                <div className="ref-tier-badge-row">
-                  <span className="ref-tier-name">Regular – Standing Zone A</span>
-                  <span className="ref-badge-avail">AVAILABLE</span>
+          {/* Render All Event Ticket Tiers dynamically */}
+          {ticketTypes.map((tier, idx) => {
+            const isAvail = tier.available_supply > 0;
+            const priceThbFormatted = (tier.price_cents / 100).toLocaleString();
+            const approxEth = (tier.price_cents / 100 / 92000).toFixed(3);
+
+            return (
+              <div key={tier.id} className={`ref-ticket-card ${ticketIndex === idx ? "highlighted" : ""}`}>
+                <div className="ref-ticket-card-top">
+                  <div className="ref-tier-info">
+                    <div className="ref-tier-badge-row">
+                      <span className="ref-tier-name">{tier.name}</span>
+                      <span className={isAvail ? "ref-badge-avail" : "ref-badge-sold"}>
+                        {isAvail ? "AVAILABLE" : "SOLD OUT"}
+                      </span>
+                    </div>
+                    <span className="ref-tier-sub">
+                      {isAvail ? `คงเหลือ ${tier.available_supply} ใบจาก ${tier.total_supply} ใบ • เข้างานประตู Gate ${idx + 1}` : "บัตรหมดแล้ว สามารถซื้อต่อผ่าน Resale หรือลงชื่อ Waitlist"}
+                    </span>
+                  </div>
+                  <span className={`ref-tier-count-pill ${isAvail ? "" : "sold"}`}>
+                    <TicketIcon size={12} />
+                    {isAvail ? `${tier.available_supply} left` : "0 available"}
+                  </span>
                 </div>
-                <span className="ref-tier-sub">Tue, Nov 17, 8:00 PM • Fast-track entry gate 2</span>
-              </div>
-              <span className="ref-tier-count-pill">
-                <TicketIcon size={12} />
-                12 left
-              </span>
-            </div>
 
-            <div className="ref-ticket-card-bottom">
-              <div className="ref-price-block">
-                <span className="ref-price-label">RESALE PRICE FROM</span>
-                <span className="ref-price-val">
-                  ฿3,500 <small>(~0.038 ETH)</small>
-                </span>
-              </div>
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button className="ref-btn-listings" onClick={() => setShowResaleModal(true)}>
-                  VIEW 12 LISTINGS <ArrowRight size={14} />
-                </button>
-                <button
-                  className="ref-btn-listings"
-                  style={{ background: "#4338ca" }}
-                  onClick={handleStartPurchase}
-                  disabled={reserving}
-                >
-                  <Sparkles size={14} />
-                  {reserving ? "Holding…" : "RESERVE"}
-                </button>
-              </div>
-            </div>
-          </div>
+                <div className="ref-ticket-card-bottom">
+                  <div className="ref-price-block">
+                    <span className="ref-price-label">{isAvail ? "OFFICIAL PRICE" : "ORIGINAL PRICE"}</span>
+                    <span className={`ref-price-val ${isAvail ? "" : "sold"}`}>
+                      ฿{priceThbFormatted} <small>(~{approxEth} ETH)</small>
+                    </span>
+                  </div>
 
-          {/* Ticket Tier 2: Sold Out with Waitlist */}
-          <div className="ref-ticket-card">
-            <div className="ref-ticket-card-top">
-              <div className="ref-tier-info">
-                <div className="ref-tier-badge-row">
-                  <span className="ref-tier-name">Seats (Reserved Tier 1)</span>
-                  <span className="ref-badge-sold">SOLD OUT</span>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    {/* View resale listings */}
+                    <button className="ref-btn-listings" onClick={() => setShowResaleModal(true)}>
+                      VIEW RESALE <ArrowRight size={14} />
+                    </button>
+
+                    {/* Primary Booking / Reservation with PoW button */}
+                    {isAvail ? (
+                      <button
+                        className="ref-btn-listings"
+                        style={{ background: "#4338ca" }}
+                        onClick={() => handleStartPurchaseForTier(idx)}
+                        disabled={reserving}
+                      >
+                        <Sparkles size={14} />
+                        {reserving && ticketIndex === idx ? "Holding…" : `จองตั๋ว (${qty} ใบ)`}
+                      </button>
+                    ) : (
+                      <button
+                        className="ref-btn-waitlist"
+                        onClick={() => alert(`คุณได้เข้าร่วม Waitlist สำหรับ ${tier.name} เรียบร้อยแล้ว! ระบบจะแจ้งเตือนเมื่อมีบัตรปล่อยขายต่อ`)}
+                      >
+                        <Bell size={13} />
+                        Join waitlist
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <span className="ref-tier-sub">Tue, Nov 17, 8:00 PM • Blocks A2, B2 reserved seating</span>
               </div>
-              <span className="ref-tier-count-pill sold">
-                <TicketIcon size={12} />
-                0 available
-              </span>
-            </div>
-
-            <div className="ref-ticket-card-bottom">
-              <div className="ref-price-block">
-                <span className="ref-price-label">ORIGINAL PRICE</span>
-                <span className="ref-price-val sold">฿4,200</span>
-              </div>
-              <button
-                className="ref-btn-waitlist"
-                onClick={() => alert("Added to Waitlist! You will receive an on-chain alert when Seats are listed for resale.")}
-              >
-                <Bell size={13} />
-                Join waitlist (34 waiting)
-              </button>
-            </div>
-          </div>
-
-          {/* Ticket Tier 3: Sold Out with Waitlist */}
-          <div className="ref-ticket-card">
-            <div className="ref-ticket-card-top">
-              <div className="ref-tier-info">
-                <div className="ref-tier-badge-row">
-                  <span className="ref-tier-name">VIP Lounge & Exclusive Soundcheck</span>
-                  <span className="ref-badge-sold">SOLD OUT</span>
-                </div>
-                <span className="ref-tier-sub">Tue, Nov 17, 5:30 PM • VIP Lounge + Commemorative Lanyard</span>
-              </div>
-              <span className="ref-tier-count-pill sold">
-                <TicketIcon size={12} />
-                0 available
-              </span>
-            </div>
-
-            <div className="ref-ticket-card-bottom">
-              <div className="ref-price-block">
-                <span className="ref-price-label">ORIGINAL PRICE</span>
-                <span className="ref-price-val sold">฿7,500</span>
-              </div>
-              <button
-                className="ref-btn-waitlist"
-                onClick={() => alert("Added to Waitlist! You will receive an on-chain alert when VIP Lounge tickets are listed.")}
-              >
-                <Bell size={13} />
-                Join waitlist (40 waiting)
-              </button>
-            </div>
-          </div>
+            );
+          })}
 
           {error && <small className="auth-error" style={{ display: "block" }}>{error}</small>}
 
@@ -1096,7 +1103,7 @@ function Detail({
               <Shield size={18} />
             </div>
             <div className="ref-security-text">
-              <strong>100% Anti-Scalper & Anti-Fraud Guarantee.</strong> Every resale ticket on U Ticket 3 is re-issued with a dynamic QR code connected directly to the venue box office smart contract. Fraudulent barcodes cannot enter.
+              <strong>100% Anti-Scalper & Anti-Fraud Guarantee.</strong> รองรับทั้งการจองบัตรปฐมภูมิ (Primary Ticket) พร้อมระบบล็อกคิว PoW ป้องกันบอท และการซื้อขายต่อ (Resale) บน Smart Contract ที่กำหนดเพดานราคาห้ามเกิน 30% อย่างเข้มงวด
             </div>
           </div>
         </div>
@@ -1112,7 +1119,7 @@ function Detail({
             <span className="eyebrow purple" style={{ color: "#a855f7" }}>PROOF OF WORK VERIFICATION</span>
             <h3 style={{ fontSize: "20px", margin: "10px 0 6px" }}>Fair Queue Verification</h3>
             <p style={{ fontSize: "13px", color: "#cbd5e1", margin: 0 }}>
-              Computing anti-scalper cryptographic PoW challenge in your browser to guarantee zero bots.
+              กำลังประมวลผล Anti-Scalper Cryptographic PoW challenge ในเบราว์เซอร์ของคุณเพื่อยืนยันคิวจองตั๋วที่เป็นธรรม ป้องกันบอท 100%
             </p>
 
             <div className="pow-progress-track">
@@ -1138,7 +1145,7 @@ function Detail({
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
               <div>
                 <span className="eyebrow purple">ERC-721 RESALE MARKET</span>
-                <h2 style={{ margin: "4px 0 0", fontSize: "20px" }}>Verified Listings (Regular Zone A)</h2>
+                <h2 style={{ margin: "4px 0 0", fontSize: "20px" }}>Verified Listings (ตลาดแลกเปลี่ยนตั๋ว)</h2>
               </div>
               <button
                 onClick={() => setShowResaleModal(false)}
@@ -1149,7 +1156,7 @@ function Detail({
             </div>
 
             <p style={{ fontSize: "12px", color: "#6b7280", margin: "0 0 16px" }}>
-              Buy directly from fan to fan on Ethereum Sepolia. Smart contract guarantees original price + max 10-20% resale cap and automatic royalty distribution.
+              ซื้อขายตั๋วต่อระหว่างแฟนเพลงอย่างปลอดภัยบน Ethereum Sepolia สัญญา Smart Contract บังคับใช้เพดานราคาห้ามขายเกิน 30% ของราคาเดิม พร้อมหัก Royalty ให้ผู้จัดงานโดยอัตโนมัติ
             </p>
 
             {resaleIsSuccess && (
@@ -1164,12 +1171,12 @@ function Detail({
               </div>
             )}
 
-            {/* List of active mock & on-chain listings */}
+            {/* List of active mock & on-chain listings with 30% cap enforcement */}
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {[
-                { tokenId: 1, seller: "0x7F2A...3B91", priceThb: "฿3,500", priceEth: "0.038 ETH", priceWei: parseEther("0.038"), verified: true },
-                { tokenId: 2, seller: "0x4C19...8D22", priceThb: "฿3,650", priceEth: "0.039 ETH", priceWei: parseEther("0.039"), verified: true },
-                { tokenId: 3, seller: "0x98E1...F5A3", priceThb: "฿3,800", priceEth: "0.041 ETH", priceWei: parseEther("0.041"), verified: true },
+                { tokenId: 1, seller: "0x7F2A...3B91", priceThb: "฿3,500", priceEth: "0.038 ETH", priceWei: parseEther("0.038"), note: "Original Price (0% markup)" },
+                { tokenId: 2, seller: "0x4C19...8D22", priceThb: "฿3,990", priceEth: "0.043 ETH", priceWei: parseEther("0.043"), note: "Resale (+14% markup)" },
+                { tokenId: 3, seller: "0x98E1...F5A3", priceThb: "฿4,550", priceEth: "0.049 ETH", priceWei: parseEther("0.049"), note: "Capped (+30% Max limit)" },
               ].map((listing) => (
                 <div key={listing.tokenId} className="ref-listing-item">
                   <div>
@@ -1178,7 +1185,7 @@ function Detail({
                       <span className="ref-badge-avail">VERIFIED RESALE</span>
                     </div>
                     <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "3px" }}>
-                      Seller: {listing.seller} • Zone A Standing
+                      Seller: {listing.seller} • {listing.note}
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -1207,7 +1214,7 @@ function Detail({
                   setShowSellModal(true);
                 }}
               >
-                Have a ticket? List it for resale here
+                มีตั๋วอยู่แล้ว? นำมาลงขายต่อได้ที่นี่ (ห้ามเกิน 30%)
               </button>
             </div>
           </div>
@@ -1221,7 +1228,7 @@ function Detail({
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
               <div>
                 <span className="eyebrow purple">LIST YOUR NFT TICKET</span>
-                <h2 style={{ margin: "4px 0 0", fontSize: "20px" }}>Sell on Verified Resale</h2>
+                <h2 style={{ margin: "4px 0 0", fontSize: "20px" }}>ลงขายตั๋วต่อ (Resale)</h2>
               </div>
               <button
                 onClick={() => setShowSellModal(false)}
@@ -1232,12 +1239,12 @@ function Detail({
             </div>
 
             <p style={{ fontSize: "12px", color: "#6b7280", margin: "0 0 16px" }}>
-              List your ERC-721 ticket on the Sepolia smart contract. The price cap (+10% to +20%) is strictly enforced on-chain to protect fans from scalping.
+              ลงขายตั๋ว ERC-721 บนเครือข่าย Sepolia โดยระบบจำกัดเพดานราคา<b>ห้ามขายเกิน 30%</b> ของราคาหน้าตั๋วเดิม เพื่อคุ้มครองแฟนเพลงและขจัดปัญหาตั๋วผี
             </p>
 
             {resaleIsSuccess && (
               <div style={{ padding: "12px", background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "8px", marginBottom: "12px", color: "#065f46", fontSize: "13px" }}>
-                ✓ Ticket successfully listed on Sepolia contract!
+                ✓ ลิสต์ตั๋วขึ้น Smart Contract บนเครือข่าย Sepolia สำเร็จ!
               </div>
             )}
 
@@ -1248,7 +1255,7 @@ function Detail({
                 </label>
                 <input
                   style={{ width: "100%", padding: "10px", border: "1px solid #e5e7eb", borderRadius: "8px", fontSize: "14px" }}
-                  placeholder="e.g. 1"
+                  placeholder="เช่น 1 หรือ 2"
                   value={sellTokenId}
                   onChange={(e) => setSellTokenId(e.target.value)}
                 />
@@ -1256,16 +1263,16 @@ function Detail({
 
               <div>
                 <label style={{ fontSize: "12px", fontWeight: "600", color: "#374151", display: "block", marginBottom: "4px" }}>
-                  Resale Price (ETH)
+                  ราคาที่ต้องการขายต่อ (ETH)
                 </label>
                 <input
                   style={{ width: "100%", padding: "10px", border: "1px solid #e5e7eb", borderRadius: "8px", fontSize: "14px" }}
-                  placeholder="e.g. 0.038"
+                  placeholder="เช่น 0.038 ถึงสูงสุด 0.049 ETH"
                   value={sellPriceEth}
                   onChange={(e) => setSellPriceEth(e.target.value)}
                 />
-                <small style={{ color: "#6b7280", fontSize: "11px", marginTop: "4px", display: "block" }}>
-                  Max allowed: ~0.045 ETH (+20% cap above original ฿3,500)
+                <small style={{ color: "#2563eb", fontSize: "11px", marginTop: "4px", display: "block", fontWeight: "600" }}>
+                  เพดานราคาสูงสุดที่อนุญาต: 0.049 ETH (ห้ามเกิน 30% ของราคาเดิม ฿3,500)
                 </small>
               </div>
 
