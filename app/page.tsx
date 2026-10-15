@@ -1,35 +1,1492 @@
 "use client";
-import { useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, MapPin, Menu, Minus, Plus, Search, Ticket, UserRound, Wallet, X } from "lucide-react";
+
+import { useEffect, useState, useTransition } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  ExternalLink,
+  MapPin,
+  Menu,
+  Minus,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Tag,
+  Ticket as TicketIcon,
+  Wallet,
+  X,
+} from "lucide-react";
 import { createSupabaseBrowserClient } from "../lib/supabase-browser";
-import { useAccount, useConnect, useDisconnect, useReadContract, useReadContracts, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import {
+  useAccount,
+  useConnect,
+  useDisconnect,
+  useReadContract,
+  useReadContracts,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "wagmi";
 import { parseEther } from "viem";
 import { QRCodeSVG } from "qrcode.react";
 import { ticketContractAbi, ticketContractAddress } from "../lib/ticket-contract";
-import { getPublishedEvents, type LiveEvent } from "../lib/events";
+import { getPublishedEvents, type LiveEvent, type TicketType } from "../lib/events";
+import { reserveTickets, type Reservation } from "../lib/reservations";
+import { completePurchase, getMyTickets, linkTicketNft, checkInTicket, type Ticket } from "../lib/orders";
 
-type Event={title:string;artist:string;date:string;venue:string;price:number;category:string;image:string;desc:string};
-const events:Event[]=[
- {title:"Neon Horizon Live",artist:"Kira",date:"18 Nov 2026 · 20:00",venue:"Warehouse 26, Bangkok",price:42,category:"Concert",image:"https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1000&q=80",desc:"A full-spectrum live set where sound, light and motion converge into one unforgettable night."},
- {title:"Afterglow FM",artist:"Maya Lune",date:"04 Dec 2026 · 19:30",venue:"The Star, Singapore",price:58,category:"Music",image:"https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1000&q=80",desc:"An intimate after-hours radio world brought to life for one limited run."},
- {title:"Void Signal",artist:"Rift + guests",date:"12 Dec 2026 · 21:00",venue:"East Hall, Tokyo",price:36,category:"Live show",image:"https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=1000&q=80",desc:"An underground pulse of guitars, granular synths and lights from another dimension."},
- {title:"Chroma City",artist:"Various artists",date:"19 Dec 2026 · 16:00",venue:"BITEC, Bangkok",price:65,category:"Festival",image:"https://images.unsplash.com/photo-1459749411175-04bf5292ceea?auto=format&fit=crop&w=1000&q=80",desc:"One city, three stages, a spectrum of new voices."},
- {title:"Sunday Social Club",artist:"The House Band",date:"10 Jan 2027 · 17:00",venue:"River Room, Bangkok",price:25,category:"Community",image:"https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=80",desc:"Good music, open skies and a room full of new friends."},
- {title:"Future Folk",artist:"Luma / Oren",date:"24 Jan 2027 · 19:00",venue:"The Foundry, Chiang Mai",price:31,category:"Music",image:"https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=1000&q=80",desc:"A warm, cinematic evening of voices and acoustic futures."}
+const fallbackEvents: LiveEvent[] = [
+  {
+    id: 1,
+    title: "BLACKPINK WORLD TOUR <BORN PINK> FINALE",
+    slug: "blackpink-born-pink-finale",
+    artist: "BLACKPINK",
+    category: "Concert",
+    venue: "Rajamangala National Stadium, Bangkok",
+    starts_at: "2026-11-20T19:00:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=1000&q=80",
+    description: "The record-breaking global tour concludes with an unforgettable stadium spectacle in Bangkok.",
+    ticket_types: [
+      { id: 101, event_id: 1, name: "VIP Standing (Soundcheck)", price_cents: 14800, total_supply: 400, available_supply: 380 },
+      { id: 102, event_id: 1, name: "Standing Zone A", price_cents: 9800, total_supply: 1200, available_supply: 1150 },
+      { id: 103, event_id: 1, name: "Seated Tier 1", price_cents: 6800, total_supply: 1500, available_supply: 1420 },
+    ],
+  },
+  {
+    id: 2,
+    title: "Coldplay: Music of the Spheres Tour",
+    slug: "coldplay-music-of-the-spheres",
+    artist: "Coldplay",
+    category: "Concert",
+    venue: "National Stadium, Bangkok",
+    starts_at: "2026-11-25T20:00:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1000&q=80",
+    description: "A luminous celebration of music, sustainability, and joy with kinetic energy dancefloors and cosmic stages.",
+    ticket_types: [
+      { id: 201, event_id: 2, name: "Kubik Experience (VIP)", price_cents: 12500, total_supply: 300, available_supply: 290 },
+      { id: 202, event_id: 2, name: "General Standing", price_cents: 5800, total_supply: 2000, available_supply: 1920 },
+      { id: 203, event_id: 2, name: "Upper Bleachers", price_cents: 3500, total_supply: 1800, available_supply: 1750 },
+    ],
+  },
+  {
+    id: 3,
+    title: "IU H.E.R. WORLD TOUR CONCERT IN BANGKOK",
+    slug: "iu-her-world-tour-bangkok",
+    artist: "IU (Lee Ji-eun)",
+    category: "Concert",
+    venue: "Impact Arena, Muang Thong Thani",
+    starts_at: "2026-12-05T18:00:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1000&q=80",
+    description: "South Korea sovereign vocal icon IU returns with a magical 3-hour emotional live journey and encore stages.",
+    ticket_types: [
+      { id: 301, event_id: 3, name: "VIP Platinum (Lanyard + Soundcheck)", price_cents: 11000, total_supply: 350, available_supply: 340 },
+      { id: 302, event_id: 3, name: "Gold Seated", price_cents: 6500, total_supply: 1000, available_supply: 960 },
+      { id: 303, event_id: 3, name: "Silver Seated", price_cents: 3800, total_supply: 1200, available_supply: 1180 },
+    ],
+  },
+  {
+    id: 4,
+    title: "Tattoo Colour: กาลครั้ง 5 แทททู คัลเลอร์",
+    slug: "tattoo-colour-carnival-5",
+    artist: "Tattoo Colour",
+    category: "Concert",
+    venue: "BITEC Bangna Hall 100, Bangkok",
+    starts_at: "2026-12-13T19:00:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1000&q=80",
+    description: "คอนเสิร์ตใหญ่จัดเต็มของวงป๊อปอันดับหนึ่งแห่งยุค พร้อมแขกรับเชิญสุดเซอร์ไพรส์และเพลงฮิตตลอด 15 ปี",
+    ticket_types: [
+      { id: 401, event_id: 4, name: "บัตรยืนสุดชิล (Early Bird)", price_cents: 2500, total_supply: 800, available_supply: 750 },
+      { id: 402, event_id: 4, name: "บัตรนั่ง VIP มีเก้าอี้", price_cents: 4000, total_supply: 400, available_supply: 390 },
+    ],
+  },
+  {
+    id: 5,
+    title: "Big Mountain Music Festival 15 (BMMF15)",
+    slug: "bmmf-15-khao-yai",
+    artist: "Various Artists",
+    category: "Festival",
+    venue: "The Ocean Khao Yai, Nakhon Ratchasima",
+    starts_at: "2026-12-12T14:00:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?auto=format&fit=crop&w=1000&q=80",
+    description: "เทศกาลดนตรีที่ใหญ่ที่สุดในประเทศไทย 9 เวที 200 กว่าศิลปิน ท่ามกลางลมหนาวและแคมป์ปิ้งเขาใหญ่",
+    ticket_types: [
+      { id: 501, event_id: 5, name: "2-Day Early Cow Pass", price_cents: 3200, total_supply: 5000, available_supply: 4850 },
+      { id: 502, event_id: 5, name: "VIP 2-Day Pass (Fast Lane + Lounge)", price_cents: 6500, total_supply: 800, available_supply: 760 },
+    ],
+  },
+  {
+    id: 6,
+    title: "Wonderfruit 2026: Art & Life Festival",
+    slug: "wonderfruit-2026-pattaya",
+    artist: "Global Artists",
+    category: "Festival",
+    venue: "The Fields at Siam Country Club, Pattaya",
+    starts_at: "2026-12-17T12:00:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1472653431158-6364773b2a56?auto=format&fit=crop&w=1000&q=80",
+    description: "A global gathering celebrating art, sustainable architecture, wellness and world music across 5 days.",
+    ticket_types: [
+      { id: 601, event_id: 6, name: "Full 5-Day Wonder Pass", price_cents: 8900, total_supply: 1200, available_supply: 1150 },
+      { id: 602, event_id: 6, name: "Weekend Pass (Fri-Sun)", price_cents: 6200, total_supply: 800, available_supply: 780 },
+    ],
+  },
+  {
+    id: 7,
+    title: "Summer Sonic Bangkok 2026",
+    slug: "summer-sonic-bangkok-2026",
+    artist: "International Headliners",
+    category: "Festival",
+    venue: "IMPACT Challenger Hall, Bangkok",
+    starts_at: "2027-01-23T13:00:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=1000&q=80",
+    description: "The premier Japanese urban music festival brings rock, pop, and electronic legends to Bangkok.",
+    ticket_types: [
+      { id: 701, event_id: 7, name: "1-Day General Entry", price_cents: 4500, total_supply: 2500, available_supply: 2400 },
+      { id: 702, event_id: 7, name: "2-Day Combo Ticket", price_cents: 7900, total_supply: 1500, available_supply: 1420 },
+    ],
+  },
+  {
+    id: 8,
+    title: "Park Bo-gum Asia Fan Meeting: Good Day",
+    slug: "park-bo-gum-fan-meeting-bangkok",
+    artist: "Park Bo-gum",
+    category: "Fan Meeting",
+    venue: "Thunder Dome, Muang Thong Thani",
+    starts_at: "2027-01-17T18:00:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1000&q=80",
+    description: "An intimate fan meeting with warm singing, candid talks and memorable interactive hi-touch benefits.",
+    ticket_types: [
+      { id: 801, event_id: 8, name: "Hi-Touch VIP Seated", price_cents: 6800, total_supply: 300, available_supply: 280 },
+      { id: 802, event_id: 8, name: "Standard Seated", price_cents: 3800, total_supply: 800, available_supply: 770 },
+    ],
+  },
+  {
+    id: 9,
+    title: "Billkin & PP Krit: Double Trouble Fan Fest",
+    slug: "billkin-pp-krit-double-trouble",
+    artist: "Billkin & PP Krit",
+    category: "Fan Meeting",
+    venue: "Queen Sirikit National Convention Center (QSNCC)",
+    starts_at: "2027-02-07T17:00:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=1000&q=80",
+    description: "แฟนมีตติ้งและคอนเสิร์ตคู่สุดพิเศษของบิวกิ้นและพีพี พร้อมโชว์เดี่ยวและสเตจร่วมสุดอลังการ",
+    ticket_types: [
+      { id: 901, event_id: 9, name: "VIP Stage Front + Official Poster", price_cents: 7500, total_supply: 450, available_supply: 420 },
+      { id: 902, event_id: 9, name: "Regular Seated", price_cents: 4200, total_supply: 1200, available_supply: 1150 },
+    ],
+  },
+  {
+    id: 10,
+    title: "The Phantom of the Opera Bangkok",
+    slug: "phantom-of-the-opera-bangkok",
+    artist: "West End Cast & Orchestra",
+    category: "Stage & Musical",
+    venue: "Muangthai Rachadalai Theatre, Bangkok",
+    starts_at: "2027-01-30T19:30:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=1000&q=80",
+    description: "The world most acclaimed musical returns with grand orchestral accompaniment, chandelier and gothic splendour.",
+    ticket_types: [
+      { id: 1001, event_id: 10, name: "Royal Circle (Best View)", price_cents: 5500, total_supply: 300, available_supply: 290 },
+      { id: 1002, event_id: 10, name: "Stalls / Balcony", price_cents: 2800, total_supply: 600, available_supply: 580 },
+    ],
+  },
+  {
+    id: 11,
+    title: "ฟ้าจรดทราย เดอะมิวสิคัล 2026",
+    slug: "fah-jarod-sai-the-musical",
+    artist: "Rachadalai All-Stars Cast",
+    category: "Stage & Musical",
+    venue: "Muangthai Rachadalai Theatre, Bangkok",
+    starts_at: "2027-02-14T19:00:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1469488865564-c2de10f69f96?auto=format&fit=crop&w=1000&q=80",
+    description: "ละครเวทีฟอร์มยักษ์ระดับตำนาน บทเพลงไพเราะและการแสดงสุดตราตรึงใจ",
+    ticket_types: [
+      { id: 1101, event_id: 11, name: "บัตรทองคำ ชั้น 1", price_cents: 4500, total_supply: 350, available_supply: 330 },
+      { id: 1102, event_id: 11, name: "บัตรชั้น 2 บรรยากาศอบอุ่น", price_cents: 2200, total_supply: 500, available_supply: 480 },
+    ],
+  },
+  {
+    id: 12,
+    title: "Riverside Jazz & Acoustic Sessions",
+    slug: "riverside-jazz-sessions",
+    artist: "The Bangkok Quintet",
+    category: "Live & Acoustic",
+    venue: "River City Bangkok",
+    starts_at: "2027-02-21T18:30:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1000&q=80",
+    description: "A relaxed acoustic sunset performance beside the Chao Phraya River with limited intimate seating.",
+    ticket_types: [
+      { id: 1201, event_id: 12, name: "Riverside Seat", price_cents: 2800, total_supply: 150, available_supply: 140 },
+      { id: 1202, event_id: 12, name: "Cocktail Lounge", price_cents: 4500, total_supply: 50, available_supply: 45 },
+    ],
+  },
 ];
-const tickets=[{name:"General Admission",price:42,remaining:184},{name:"Priority Entry",price:78,remaining:42},{name:"VIP Experience",price:160,remaining:8}];
-export default function Home(){const[view,setView]=useState("home"),[selected,setSelected]=useState(events[0]),[search,setSearch]=useState(""),[slide,setSlide]=useState(0),[ticket,setTicket]=useState(0),[qty,setQty]=useState(1),[wallet,setWallet]=useState(false),[authed,setAuthed]=useState(false),[authReady,setAuthReady]=useState(false);useEffect(()=>{const supabase=createSupabaseBrowserClient();let active=true;const fallback=window.setTimeout(()=>{if(active)setAuthReady(true)},4000);supabase.auth.getSession().then(({data})=>{if(active){setAuthed(Boolean(data.session));setAuthReady(true);window.clearTimeout(fallback)}}).catch(()=>{if(active)setAuthReady(true)});const{data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{setAuthed(Boolean(session));setAuthReady(true)});return()=>{active=false;window.clearTimeout(fallback);subscription.unsubscribe()}},[]);const filtered=events.filter(e=>(e.title+e.artist+e.venue).toLowerCase().includes(search.toLowerCase()));const open=(e:Event)=>{setSelected(e);setView("detail")};const logout=async()=>{await createSupabaseBrowserClient().auth.signOut();setView("home")};return <><header className="topbar"><div className="nav-wrap"><button className="mobile-menu"><Menu size={21}/></button><button className="logo" onClick={()=>setView("home")}><span>✦</span> ChainTicket</button><div className="header-search"><Search size={18}/><input placeholder="Search events" value={search} onChange={e=>setSearch(e.target.value)}/></div><nav className="main-nav"><button onClick={()=>setView("organizer")}>Organizer <ChevronDown size={14}/></button><button>ไทย / EN <ChevronDown size={14}/></button><button className="wallet-link" onClick={()=>setWallet(true)}><Wallet size={15}/> Connect wallet</button><button className="login" onClick={()=>authed?logout():setView("auth")}>{!authReady?"Checking…":authed?"Log out":"Log In / Sign Up"}</button></nav><button className="mobile-ticket" onClick={()=>setView("tickets")}><Ticket size={20}/></button></div></header><main className="page-wrap">{view==="home"&&<HomeView slide={slide} setSlide={setSlide} open={open} events={filtered}/>} {view==="auth"&&<Auth onDone={()=>{setAuthed(true);setView("home")}}/>} {view==="detail"&&<Detail event={selected} ticket={ticket} setTicket={setTicket} qty={qty} setQty={setQty} back={()=>setView("home")} checkout={()=>setView(authed?"cart":"auth")}/>} {view==="cart"&&<Cart event={selected} ticket={tickets[ticket]} qty={qty} back={()=>setView("detail")} checkout={()=>setView("checkout")}/>} {view==="checkout"&&<Checkout total={(tickets[ticket].price*qty*1.08).toFixed(2)} back={()=>setView("cart")} done={()=>setView("success")}/>} {view==="success"&&<Success tickets={()=>setView("tickets")}/>} {view==="tickets"&&<MyTickets event={selected}/>} {view==="organizer"&&<Organizer/>}</main><footer><div className="footer-inner"><div><div className="logo"><span>✦</span> ChainTicket</div><p>Find your next live moment.</p></div><div><strong>Discover</strong><a>Events</a><a>Concerts</a><a>Festivals</a></div><div><strong>For organizers</strong><a>Create an event</a><a>Organizer guide</a><a>Help center</a></div><div><strong>ChainTicket</strong><a>About us</a><a>Terms & privacy</a><a>Contact</a></div></div><div className="footer-bottom">© 2026 ChainTicket <span>Built for live moments · Testnet only</span></div></footer>{wallet&&<WalletModal close={()=>setWallet(false)} />}</>}
-function HomeView({slide,setSlide,open,events}:{slide:number;setSlide:(n:number)=>void;open:(e:Event)=>void;events:Event[]}){const banners=[{title:"Your next live moment awaits",sub:"Discover music, art and experiences worth remembering.",image:"https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=1800&q=85"},{title:"Make memories collectible",sub:"Simple tickets. Meaningful experiences. Built for everyone.",image:"https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=1800&q=85"}];const b=banners[slide];return <><section className="hero-banner" style={{backgroundImage:`linear-gradient(90deg,rgba(23,6,55,.82),rgba(45,8,127,.2)),url(${b.image})`}}><div className="hero-content"><span className="eyebrow">CHAINTICKET PRESENTS</span><h1>{b.title}</h1><p>{b.sub}</p><button className="white-button" onClick={()=>document.getElementById("events")?.scrollIntoView({behavior:"smooth"})}>Explore events <ArrowRight size={17}/></button></div><button className="slide prev" onClick={()=>setSlide((slide+1)%2)}><ChevronLeft/></button><button className="slide next" onClick={()=>setSlide((slide+1)%2)}><ChevronRight/></button><div className="dots">{banners.map((_,i)=><i key={i} className={i===slide?"selected":""} onClick={()=>setSlide(i)}/>)}</div></section><section className="collection"><div className="section-head"><div><span className="eyebrow purple">UPCOMING EVENTS</span><h2>Something to look forward to</h2></div><button className="view-all">View all <ArrowRight size={15}/></button></div><div className="event-grid">{events.slice(0,4).map(e=><Card key={e.title} event={e} open={open}/>)}</div></section><section className="categories"><div className="section-head"><div><span className="eyebrow purple">BROWSE BY MOOD</span><h2>Find your scene</h2></div></div><div className="category-tabs"><button className="active">All events</button><button>Concerts</button><button>Festivals</button><button>Workshops</button><button>Community</button></div><div className="event-grid">{events.slice(2).map(e=><Card key={e.title} event={e} open={open}/>)}</div></section><section className="organizer-cta"><div><span className="eyebrow">FOR CREATORS</span><h2>Bring your next event to life.</h2><p>Build your audience, sell tickets and make every moment count.</p></div><button className="purple-button">Become an organizer <ArrowRight size={16}/></button></section></>}
-function Card({event,open}:{event:Event;open:(e:Event)=>void}){return <button className="event-card" onClick={()=>open(event)}><div className="card-image" style={{backgroundImage:`url(${event.image})`}}><span>{event.category}</span></div><div className="card-content"><h3>{event.title}</h3><p>{event.artist}</p><div className="card-meta"><span><CalendarDays size={14}/>{event.date}</span><span><MapPin size={14}/>{event.venue}</span></div><strong>From ${event.price}</strong></div></button>}
-function Detail({event,ticket,setTicket,qty,setQty,back,checkout}:{event:Event;ticket:number;setTicket:(n:number)=>void;qty:number;setQty:(n:number)=>void;back:()=>void;checkout:()=>void}){return <div className="detail-page"><button className="back-link" onClick={back}><ArrowLeft size={16}/> All events</button><div className="detail-banner" style={{backgroundImage:`url(${event.image})`}}/><div className="detail-columns"><article><span className="eyebrow purple">{event.category.toUpperCase()}</span><h1>{event.title}</h1><p className="detail-artist">{event.artist}</p><div className="info-row"><span><CalendarDays size={18}/>{event.date}</span><span><MapPin size={18}/>{event.venue}</span></div><h2>About this event</h2><p className="body-copy">{event.desc} Join a welcoming crowd and experience a night designed around connection, sound and the joy of being there together.</p><p className="body-copy">Your ChainTicket is delivered digitally after checkout and can be shown from My Tickets.</p></article><aside className="buy-panel"><div className="panel-top"><strong>Choose your ticket</strong><span className="timer">Reserved for 09:58</span></div>{tickets.map((t,i)=><button className={ticket===i?"ticket-option selected":"ticket-option"} key={t.name} onClick={()=>setTicket(i)}><span><b>{t.name}</b><small>{t.remaining} remaining</small></span><strong>${t.price}</strong></button>)}<div className="stepper"><span>Quantity</span><button onClick={()=>setQty(Math.max(1,qty-1))}><Minus size={15}/></button><b>{qty}</b><button onClick={()=>setQty(Math.min(6,qty+1))}><Plus size={15}/></button></div><button className="purple-button full" onClick={checkout}>Buy tickets · ${(tickets[ticket].price*qty).toFixed(2)} <ArrowRight size={16}/></button><small className="safe">Test mode · no real payment</small></aside></div></div>}
-function Cart({event,ticket,qty,back,checkout}:{event:Event;ticket:{name:string;price:number};qty:number;back:()=>void;checkout:()=>void}){return <div className="checkout-page"><button className="back-link" onClick={back}><ArrowLeft size={16}/> Back to event</button><span className="eyebrow purple">YOUR CART</span><h1>Review your tickets</h1><div className="checkout-card"><div className="cart-event"><img src={event.image}/><div><h3>{event.title}</h3><p>{event.date} · {event.venue}</p><span>{ticket.name} · {qty} ticket{qty>1?"s":""}</span></div></div><div className="price-line"><span>Tickets</span><b>${(ticket.price*qty).toFixed(2)}</b></div><div className="price-line"><span>Service fee <small>8%</small></span><b>${(ticket.price*qty*.08).toFixed(2)}</b></div><div className="total-line"><span>Total</span><b>${(ticket.price*qty*1.08).toFixed(2)}</b></div><button className="purple-button full" onClick={checkout}>Checkout <ArrowRight size={16}/></button></div></div>}
-function Checkout({total,back,done}:{total:string;back:()=>void;done:()=>void}){return <div className="checkout-page"><button className="back-link" onClick={back}><ArrowLeft size={16}/> Back to cart</button><span className="eyebrow purple">SECURE CHECKOUT</span><h1>Complete your order</h1><div className="checkout-form"><label>Email address<input placeholder="you@example.com"/></label><label>Full name<input placeholder="Your name"/></label><div className="mock-stripe"><Ticket size={18}/><span><b>Test payment</b><small>Stripe test mode · card details are not collected</small></span></div><button className="purple-button full" onClick={done}>Pay ${total} <ArrowRight size={16}/></button></div></div>}
-function Success({tickets}:{tickets:()=>void}){return <div className="success"><div>✓</div><span className="eyebrow purple">ORDER CONFIRMED</span><h1>You&apos;re going to<br/><em>Neon Horizon.</em></h1><p>Your digital ticket is ready. Order CT-2048 · Mock payment complete.</p><button className="purple-button" onClick={tickets}>View my ticket <Ticket size={16}/></button></div>}
-function Auth({onDone}:{onDone:()=>void}){const[register,setRegister]=useState(false),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[name,setName]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false);const submit=async()=>{setBusy(true);setError("");try{const supabase=createSupabaseBrowserClient();const result=register?await supabase.auth.signUp({email,password,options:{data:{full_name:name}}}):await supabase.auth.signInWithPassword({email,password});if(result.error)throw result.error;onDone()}catch(e){setError(e instanceof Error?e.message:"Authentication failed")}finally{setBusy(false)}};return <div className="auth-page"><div className="auth-card"><span className="eyebrow purple">CHAINTICKET ACCOUNT</span><h1>{register?"Create your account":"Welcome back"}</h1><p>Save tickets, manage orders and collect every moment.</p>{register&&<input placeholder="Full name" value={name} onChange={e=>setName(e.target.value)}/>}<input placeholder="Email address" type="email" value={email} onChange={e=>setEmail(e.target.value)}/><input placeholder="Password" type="password" value={password} onChange={e=>setPassword(e.target.value)}/>{error&&<small className="auth-error">{error}</small>}<button className="purple-button full" onClick={submit} disabled={busy}>{busy?"Please wait…":register?"Create account":"Log in"} {!busy&&<ArrowRight size={16}/>}</button><button className="auth-switch" onClick={()=>setRegister(!register)}>{register?"Already have an account? Log in":"New here? Create an account"}</button><small>Supabase Auth · credentials are encrypted by the provider</small></div></div>}
-function MyTickets({event}:{event:Event}){const[checked,setChecked]=useState(false);const[showQr,setShowQr]=useState(false);return <div className="tickets-page"><span className="eyebrow purple">YOUR COLLECTION</span><h1>My tickets</h1><OwnedTicketCollection event={event}/><div className="my-ticket"><img src={event.image}/><div><span className={checked?"valid checked":"valid"}>● {checked?"Checked in":"Valid ticket"}</span><h2>{event.title}</h2><p>{event.date}<br/>{event.venue}</p><b>Signal Pass · NFT ticket</b><MintTicket event={event}/><button className="outline-button" onClick={()=>{setShowQr(!showQr);if(!showQr)setChecked(true)}}>{showQr?"Hide QR":"Show QR / Verify ticket"}</button></div><div className="qr-code">{showQr?<QRCodeSVG value={`${ticketContractAddress}:event:${event.title}:wallet-ticket`} size={112}/>:"▦"}<small>{showQr?"Scan to verify":"NFT ticket"}</small></div></div><p className="demo-note">The QR identifies this ticket and contract. Blockchain ownership is the source of truth; check-in is irreversible on-chain.</p><ResalePanel/><ResaleBuyerPanel/></div>}
-function OwnedTicketCollection({event}:{event:Event}){const{address}=useAccount();const{data:nextToken}=useReadContract({address:ticketContractAddress,abi:ticketContractAbi,functionName:"nextTokenId"});const total=nextToken?Number(nextToken)-1:0;const calls=Array.from({length:Math.min(total,100)},(_,i)=>({address:ticketContractAddress,abi:ticketContractAbi,functionName:"ownerOf" as const,args:[BigInt(i+1)] as const}));const owners=useReadContracts({contracts:calls,query:{enabled:Boolean(address&&total)}});const owned=owners.data?.map((result,i)=>({tokenId:i+1,owner:result.result as string|undefined})).filter(t=>t.owner&&address&&t.owner.toLowerCase()===address.toLowerCase())||[];return <section className="owned-collection"><div className="collection-summary"><div><strong>{owned.length}</strong><span>Owned NFT tickets</span></div><small>{owners.isLoading?"Checking blockchain ownership…":`${total} token${total===1?"":"s"} minted on Ethereum Sepolia`}</small></div>{owned.length===0&&!owners.isLoading&&<div className="empty-tickets"><Ticket size={24}/><div><b>No NFT tickets found yet</b><span>Mint a ticket with the owner wallet or buy one from the resale market.</span></div></div>}{owned.length>0&&<div className="owned-grid">{owned.map(ticket=><article className="owned-card" key={ticket.tokenId}><img src={event.image} alt={event.title}/><div><span className="valid">● Owned by your wallet</span><h3>{event.title}</h3><p>{event.date} · {event.venue}</p><strong>Token #{ticket.tokenId}</strong><small>U Ticket 3 · Ethereum Sepolia</small></div></article>)}</div>}</section>}
-function MintTicket({event}:{event:Event}){const{address,isConnected}=useAccount();const{writeContract,data:hash,isPending,error}=useWriteContract();const{isLoading,isSuccess}=useWaitForTransactionReceipt({hash});const{data:nextToken}=useReadContract({address:ticketContractAddress,abi:ticketContractAbi,functionName:"nextTokenId"});const mint=()=>{if(!address)return;writeContract({address:ticketContractAddress,abi:ticketContractAbi,functionName:"mint",args:[address,BigInt(1),BigInt(1),BigInt(Date.now()),parseEther("0.0001"),"ipfs://u-ticket-3/demo-ticket.json"]})};return <div className="nft-action"><button className="purple-button" disabled={!isConnected||isPending||isLoading} onClick={mint}>{isPending||isLoading?"Minting NFT…":isSuccess?"NFT minted ✓":"Mint real ticket NFT"}</button>{nextToken&&<small>Next token ID: #{nextToken.toString()}</small>}{hash&&<a href={`https://sepolia.etherscan.io/tx/${hash}`} target="_blank" rel="noreferrer">View transaction</a>}{error&&<small className="auth-error">{error.message.slice(0,140)}</small>}<small>{isConnected?"Uses the connected wallet on Ethereum Sepolia":"Connect wallet to mint"}</small></div>}
-function ResalePanel(){const{address,isConnected}=useAccount();const[tokenId,setTokenId]=useState("");const[price,setPrice]=useState("0.00011");const{writeContract,data:hash,isPending,error}=useWriteContract();const{isLoading,isSuccess}=useWaitForTransactionReceipt({hash});const owner=useReadContract({address:ticketContractAddress,abi:ticketContractAbi,functionName:"ownerOf",args:tokenId?[BigInt(tokenId)]:undefined,query:{enabled:Boolean(tokenId)}});const original=useReadContract({address:ticketContractAddress,abi:ticketContractAbi,functionName:"originalPriceWei",args:tokenId?[BigInt(tokenId)]:undefined,query:{enabled:Boolean(tokenId)}});const list=()=>{if(!tokenId)return;writeContract({address:ticketContractAddress,abi:ticketContractAbi,functionName:"list",args:[BigInt(tokenId),parseEther(price)]})};const cancel=()=>{if(!tokenId)return;writeContract({address:ticketContractAddress,abi:ticketContractAbi,functionName:"cancelListing",args:[BigInt(tokenId)]})};const owns=Boolean(address&&owner.data&&String(owner.data).toLowerCase()===address.toLowerCase());return <div className="resale-panel"><h2>Resale marketplace</h2><p>List an owned NFT for up to 10% above its original price. All actions require a wallet signature.</p><div className="resale-fields"><input aria-label="Token ID" placeholder="Token ID" value={tokenId} onChange={e=>setTokenId(e.target.value.replace(/\D/g,""))}/><input aria-label="Resale price" placeholder="ETH price" value={price} onChange={e=>setPrice(e.target.value)}/></div>{original.data&&<small>Original price: {Number(original.data)/1e18} ETH · Maximum resale is +10%</small>}<div className="resale-actions"><button className="purple-button" disabled={!isConnected||!owns||isPending||isLoading} onClick={list}>List for resale</button><button className="outline-button" disabled={!isConnected||!owns||isPending||isLoading} onClick={cancel}>Cancel listing</button></div>{owner.error&&<small className="auth-error">Token not found or not minted.</small>}{!owns&&tokenId&&owner.data&&<small>This wallet does not own token #{tokenId}.</small>}{(hash||isSuccess)&&<a href={`https://sepolia.etherscan.io/tx/${hash}`} target="_blank" rel="noreferrer">Transaction status on Sepolia</a>}{error&&<small className="auth-error">{error.message.slice(0,140)}</small>}</div>}
-function ResaleBuyerPanel(){const{address,isConnected}=useAccount();const[tokenId,setTokenId]=useState("");const{data:listing,error:listingError}=useReadContract({address:ticketContractAddress,abi:ticketContractAbi,functionName:"listings",args:tokenId?[BigInt(tokenId)]:undefined,query:{enabled:Boolean(tokenId)}});const{writeContract,data:hash,isPending,error}=useWriteContract();const{isLoading,isSuccess}=useWaitForTransactionReceipt({hash});const seller=listing?.[0] as `0x${string}`|undefined;const price=listing?.[1] as bigint|undefined;const available=Boolean(seller&&seller!=="0x0000000000000000000000000000000000000000"&&price&&price>BigInt(0));const sameOwner=Boolean(address&&seller&&address.toLowerCase()===seller.toLowerCase());const buy=()=>{if(!tokenId||!price)return;writeContract({address:ticketContractAddress,abi:ticketContractAbi,functionName:"buy",args:[BigInt(tokenId)],value:price})};return <div className="resale-panel buyer-panel"><span className="eyebrow purple">BUY FROM ANOTHER FAN</span><h2>Find a resale ticket</h2><p>Enter a listed token ID to read its live price from Ethereum Sepolia. Payment and ownership transfer happen in one blockchain transaction.</p><div className="resale-fields"><input aria-label="Resale token ID" placeholder="Token ID to buy" value={tokenId} onChange={e=>setTokenId(e.target.value.replace(/\D/g,""))}/></div>{available&&<div className="listing-summary"><span>Listed by <b>{seller?.slice(0,6)}…{seller?.slice(-4)}</b></span><strong>{price?Number(price)/1e18:0} ETH</strong></div>}{tokenId&&listingError&&<small className="auth-error">This token is not available or has no active listing.</small>}{tokenId&&!available&&!listingError&&<small>No active listing found for this token.</small>}<button className="purple-button" disabled={!isConnected||!available||sameOwner||isPending||isLoading} onClick={buy}>{isPending||isLoading?"Confirming purchase…":isSuccess?"Ticket purchased ✓":"Buy resale ticket"}</button>{sameOwner&&<small>You cannot buy your own listing.</small>}{!isConnected&&<small>Connect wallet before purchasing.</small>}{(hash||isSuccess)&&<a href={`https://sepolia.etherscan.io/tx/${hash}`} target="_blank" rel="noreferrer">View purchase transaction</a>}{error&&<small className="auth-error">{error.message.slice(0,140)}</small>}</div>}
-function Organizer(){return <div className="organizer-page"><span className="eyebrow purple">ORGANIZER SPACE</span><h1>Manage your events</h1><div className="organizer-stats"><div><small>SALES</small><b>$24,860</b><span>↗ 18.4%</span></div><div><small>TICKETS SOLD</small><b>428 / 600</b><span>71.3% capacity</span></div><div><small>CHECKED IN</small><b>186</b><span>43.4% of holders</span></div></div><div className="organizer-table"><h2>Neon Horizon Live</h2><p>184 General · 42 Priority · 8 VIP tickets remaining</p><div className="progress"><i/></div></div></div>}
-function WalletModal({close}:{close:()=>void}){const{address,isConnected}=useAccount();const{connect,connectors,isPending}=useConnect();const{disconnect}=useDisconnect();return <div className="modal-bg" onClick={close}><div className="wallet-modal" onClick={e=>e.stopPropagation()}><button onClick={close}><X/></button><Wallet size={28}/><h2>{isConnected?"Wallet connected":"Connect your wallet"}</h2>{isConnected?<><p className="wallet-address">{address}</p><button className="wallet-option" onClick={()=>{disconnect();close()}}>Disconnect <X size={15}/></button></>:<><p>Connect MetaMask to collect U Ticket 3 NFTs on Ethereum Sepolia testnet.</p>{connectors.map(c=><button className="wallet-option" key={c.uid} disabled={isPending} onClick={()=>connect({connector:c})}>{isPending?"Connecting…":c.name}<ArrowRight size={15}/></button>)}</>}<small>Ethereum Sepolia only · Never share your seed phrase</small></div></div>}
+
+export default function Home() {
+  const [view, setView] = useState("home");
+  const [eventsList, setEventsList] = useState<LiveEvent[]>(fallbackEvents);
+  const [selected, setSelected] = useState<LiveEvent>(fallbackEvents[0]);
+  const [search, setSearch] = useState("");
+  const [slide, setSlide] = useState(0);
+  const [selectedTicketIndex, setSelectedTicketIndex] = useState(0);
+  const [qty, setQty] = useState(1);
+  const [wallet, setWallet] = useState(false);
+  const [authed, setAuthed] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [currentReservation, setCurrentReservation] = useState<Reservation | null>(null);
+  const [lastOrder, setLastOrder] = useState<{ order_id: string; total_cents: number; quantity: number; ticket_ids: string[]; ticket_type_name: string } | null>(null);
+
+  const loadEvents = async () => {
+    try {
+      const data = await getPublishedEvents();
+      if (data && data.length > 0) {
+        // Merge Supabase events with rich events catalog so custom added events are prominently shown
+        const seenSlugs = new Set(data.map((e) => e.slug));
+        const combined = [...data, ...fallbackEvents.filter((f) => !seenSlugs.has(f.slug))];
+        setEventsList(combined);
+        setSelected(combined[0]);
+        return;
+      }
+    } catch (e) {
+      console.warn("Supabase event load fallback:", e);
+    }
+    setEventsList(fallbackEvents);
+    setSelected(fallbackEvents[0]);
+  };
+
+  useEffect(() => {
+    loadEvents();
+    const supabase = createSupabaseBrowserClient();
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (active) {
+        setAuthed(Boolean(data.session));
+        setAuthReady(true);
+      }
+    }).catch(() => {
+      if (active) setAuthReady(true);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthed(Boolean(session));
+      setAuthReady(true);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const filtered = eventsList.filter((e) =>
+    (e.title + (e.artist || "") + e.venue).toLowerCase().includes(search.toLowerCase())
+  );
+
+  const open = (e: LiveEvent) => {
+    setSelected(e);
+    setSelectedTicketIndex(0);
+    setQty(1);
+    setCurrentReservation(null);
+    setView("detail");
+  };
+
+  const { disconnect } = useDisconnect();
+
+  const logout = async () => {
+    try {
+      disconnect();
+    } catch (e) {
+      console.warn("Wallet disconnect on logout:", e);
+    }
+    await createSupabaseBrowserClient().auth.signOut();
+    setView("home");
+  };
+
+  const activeTicketTypes = selected.ticket_types && selected.ticket_types.length > 0
+    ? selected.ticket_types
+    : [{ id: 1, event_id: selected.id, name: "General Admission", price_cents: 4200, total_supply: 100, available_supply: 100 }];
+
+  const currentTicketType = activeTicketTypes[selectedTicketIndex] || activeTicketTypes[0];
+
+  return (
+    <>
+      <header className="topbar">
+        <div className="nav-wrap">
+          <button className="mobile-menu" aria-label="Menu"><Menu size={21} /></button>
+          <button className="logo" onClick={() => setView("home")}>
+            <span>✦</span> U Ticket 3
+          </button>
+          <div className="header-search">
+            <Search size={18} />
+            <input placeholder="Search events, artists, venues" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <nav className="main-nav">
+            <button onClick={() => setView("home")}>Events</button>
+            <button onClick={() => setView("tickets")}>
+              <TicketIcon size={14} /> My Tickets & Resale
+            </button>
+            <button onClick={() => setView("organizer")}>Organizer</button>
+            <button className="wallet-link" onClick={() => setWallet(true)}>
+              <Wallet size={15} /> Connect wallet
+            </button>
+            <button className="login" onClick={() => (authed ? logout() : setView("auth"))}>
+              {!authReady ? "Checking…" : authed ? "Log out" : "Log In / Sign Up"}
+            </button>
+          </nav>
+          <button className="mobile-ticket" onClick={() => setView("tickets")} aria-label="Tickets">
+            <TicketIcon size={20} />
+          </button>
+        </div>
+      </header>
+
+      <main className="page-wrap">
+        {view === "home" && (
+          <HomeView slide={slide} setSlide={setSlide} open={open} events={filtered} />
+        )}
+        {view === "auth" && (
+          <Auth onDone={() => { setAuthed(true); setView("home"); }} />
+        )}
+        {view === "detail" && (
+          <Detail
+            event={selected}
+            ticketTypes={activeTicketTypes}
+            ticketIndex={selectedTicketIndex}
+            setTicketIndex={setSelectedTicketIndex}
+            qty={qty}
+            setQty={setQty}
+            back={() => setView("home")}
+            onReserved={(reservation) => {
+              setCurrentReservation(reservation);
+              setView("cart");
+            }}
+            authed={authed}
+            onRequireAuth={() => setView("auth")}
+          />
+        )}
+        {view === "cart" && (
+          <Cart
+            event={selected}
+            ticketType={currentTicketType}
+            qty={qty}
+            reservation={currentReservation}
+            back={() => setView("detail")}
+            checkout={() => setView("checkout")}
+          />
+        )}
+        {view === "checkout" && (
+          <Checkout
+            event={selected}
+            ticketType={currentTicketType}
+            qty={qty}
+            reservation={currentReservation}
+            back={() => setView("cart")}
+            onSuccess={(orderData) => {
+              setLastOrder(orderData);
+              setView("success");
+            }}
+          />
+        )}
+        {view === "success" && (
+          <Success order={lastOrder} event={selected} onViewTickets={() => setView("tickets")} />
+        )}
+        {view === "tickets" && (
+          <MyTickets event={selected} />
+        )}
+        {view === "organizer" && (
+          <Organizer events={eventsList} />
+        )}
+      </main>
+
+      <footer>
+        <div className="footer-inner">
+          <div>
+            <div className="logo"><span>✦</span> U Ticket 3</div>
+            <p>Direct Web3 ticketing with fair resale caps on Ethereum Sepolia.</p>
+          </div>
+          <div>
+            <strong>Marketplace</strong>
+            <a onClick={() => setView("home")}>All Events</a>
+            <a onClick={() => setView("tickets")}>Resale Market</a>
+            <a onClick={() => setView("tickets")}>My Collection</a>
+          </div>
+          <div>
+            <strong>Organizer Portal</strong>
+            <a onClick={() => setView("organizer")}>Check-in Scanner</a>
+            <a onClick={() => setView("organizer")}>Sales & Inventory</a>
+            <a>Verified Creator Guide</a>
+          </div>
+          <div>
+            <strong>Smart Contract</strong>
+            <a href={`https://sepolia.etherscan.io/address/${ticketContractAddress}`} target="_blank" rel="noreferrer">
+              Etherscan Contract ↗
+            </a>
+            <a>Chain ID: 11155111</a>
+            <a>ERC-721 Standard</a>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          © 2026 U Ticket 3 <span>Built on Ethereum Sepolia · Verified Fair Resale</span>
+        </div>
+      </footer>
+
+      {wallet && <WalletModal close={() => setWallet(false)} />}
+    </>
+  );
+}
+
+function HomeView({
+  slide,
+  setSlide,
+  open,
+  events,
+}: {
+  slide: number;
+  setSlide: (n: number) => void;
+  open: (e: LiveEvent) => void;
+  events: LiveEvent[];
+}) {
+  const banners = [
+    {
+      title: "Fair ticketing. Permanent ownership.",
+      sub: "Official concert tickets with on-chain verification and a strict 10% resale cap.",
+      image: "https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=1800&q=85",
+    },
+    {
+      title: "Collect your live memories on-chain",
+      sub: "Never worry about counterfeit tickets again. Verified on Ethereum Sepolia.",
+      image: "https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=1800&q=85",
+    },
+  ];
+  const b = banners[slide];
+
+  const [activeCategory, setActiveCategory] = useState("All");
+
+  const categories = ["All", "Concert", "Festival", "Fan Meeting", "Stage & Musical", "Live & Acoustic"];
+
+  const displayedEvents = activeCategory === "All"
+    ? events
+    : events.filter((e) => (e.category || "Concert") === activeCategory);
+
+  return (
+    <>
+      <section
+        className="hero-banner"
+        style={{ backgroundImage: `linear-gradient(90deg,rgba(23,6,55,.82),rgba(45,8,127,.2)),url(${b.image})` }}
+      >
+        <div className="hero-content">
+          <span className="eyebrow">U TICKET 3 PRESENTS</span>
+          <h1>{b.title}</h1>
+          <p>{b.sub}</p>
+          <button
+            className="white-button"
+            onClick={() => document.getElementById("events-section")?.scrollIntoView({ behavior: "smooth" })}
+          >
+            Explore events <ArrowRight size={17} />
+          </button>
+        </div>
+        <button className="slide prev" onClick={() => setSlide((slide + 1) % 2)} aria-label="Previous">
+          <ChevronLeft />
+        </button>
+        <button className="slide next" onClick={() => setSlide((slide + 1) % 2)} aria-label="Next">
+          <ChevronRight />
+        </button>
+        <div className="dots">
+          {banners.map((_, i) => (
+            <i key={i} className={i === slide ? "selected" : ""} onClick={() => setSlide(i)} />
+          ))}
+        </div>
+      </section>
+
+      <section className="categories" id="events-section">
+        <div className="section-head">
+          <div>
+            <span className="eyebrow purple">EXPLORE EXPERIENCES</span>
+            <h2>Upcoming Events</h2>
+          </div>
+          <span className="view-all">{displayedEvents.length} Events</span>
+        </div>
+
+        <div className="category-tabs">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              className={activeCategory === cat ? "active" : ""}
+              onClick={() => setActiveCategory(cat)}
+            >
+              {cat === "All" ? "All Events" : cat}
+            </button>
+          ))}
+        </div>
+
+        <div className="event-grid">
+          {displayedEvents.map((e) => (
+            <Card key={e.id} event={e} open={open} />
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function Card({ event, open }: { event: LiveEvent; open: (e: LiveEvent) => void }) {
+  const dateFormatted = new Date(event.starts_at).toLocaleDateString("en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const minPrice = event.ticket_types && event.ticket_types.length > 0
+    ? Math.min(...event.ticket_types.map((t) => t.price_cents)) / 100
+    : 42;
+
+  return (
+    <button className="event-card" onClick={() => open(event)}>
+      <div className="card-image" style={{ backgroundImage: `url(${event.image_url})` }}>
+        <span>{event.category || "Concert"}</span>
+      </div>
+      <div className="card-content">
+        <h3>{event.title}</h3>
+        <p>{event.artist || "Featured Artist"}</p>
+        <div className="card-meta">
+          <span><CalendarDays size={14} />{dateFormatted}</span>
+          <span><MapPin size={14} />{event.venue}</span>
+        </div>
+        <strong>From ${minPrice.toFixed(2)}</strong>
+      </div>
+    </button>
+  );
+}
+
+function Detail({
+  event,
+  ticketTypes,
+  ticketIndex,
+  setTicketIndex,
+  qty,
+  setQty,
+  back,
+  onReserved,
+  authed,
+  onRequireAuth,
+}: {
+  event: LiveEvent;
+  ticketTypes: TicketType[];
+  ticketIndex: number;
+  setTicketIndex: (n: number) => void;
+  qty: number;
+  setQty: (n: number) => void;
+  back: () => void;
+  onReserved: (reservation: Reservation) => void;
+  authed: boolean;
+  onRequireAuth: () => void;
+}) {
+  const [reserving, setReserving] = useState(false);
+  const [error, setError] = useState("");
+  const selectedType = ticketTypes[ticketIndex] || ticketTypes[0];
+
+  const handleReserve = async () => {
+    if (!authed) {
+      onRequireAuth();
+      return;
+    }
+    setReserving(true);
+    setError("");
+    try {
+      const reservation = await reserveTickets(selectedType.id, qty);
+      onReserved(reservation);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to reserve tickets";
+      if (msg.includes("SOLD_OUT")) {
+        setError("This tier is currently sold out or exceeds remaining supply.");
+      } else if (msg.includes("AUTH_REQUIRED")) {
+        onRequireAuth();
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setReserving(false);
+    }
+  };
+
+  const dateFormatted = new Date(event.starts_at).toLocaleDateString("en-US", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return (
+    <div className="detail-page">
+      <button className="back-link" onClick={back}>
+        <ArrowLeft size={16} /> All events
+      </button>
+      <div className="detail-banner" style={{ backgroundImage: `url(${event.image_url})` }} />
+      <div className="detail-columns">
+        <article>
+          <span className="eyebrow purple">LIVE EVENT</span>
+          <h1>{event.title}</h1>
+          <p className="detail-artist">{event.artist}</p>
+          <div className="info-row">
+            <span><CalendarDays size={18} />{dateFormatted}</span>
+            <span><MapPin size={18} />{event.venue}</span>
+          </div>
+          <h2>About this event</h2>
+          <p className="body-copy">{event.description}</p>
+          <p className="body-copy">
+            Each ticket is recorded on Ethereum Sepolia and stored in your profile.
+            Ticket reservation locks inventory for 10 minutes to prevent overselling.
+          </p>
+        </article>
+
+        <aside className="buy-panel">
+          <div className="panel-top">
+            <strong>Choose your ticket</strong>
+            <span className="timer">10-min reservation hold</span>
+          </div>
+
+          {ticketTypes.map((t, i) => (
+            <button
+              className={ticketIndex === i ? "ticket-option selected" : "ticket-option"}
+              key={t.id}
+              onClick={() => setTicketIndex(i)}
+            >
+              <span>
+                <b>{t.name}</b>
+                <small>{t.available_supply} remaining of {t.total_supply}</small>
+              </span>
+              <strong>${(t.price_cents / 100).toFixed(2)}</strong>
+            </button>
+          ))}
+
+          <div className="stepper">
+            <span>Quantity (max 6)</span>
+            <button onClick={() => setQty(Math.max(1, qty - 1))} aria-label="Decrease">
+              <Minus size={15} />
+            </button>
+            <b>{qty}</b>
+            <button onClick={() => setQty(Math.min(6, qty + 1))} aria-label="Increase">
+              <Plus size={15} />
+            </button>
+          </div>
+
+          {error && <small className="auth-error" style={{ marginBottom: "12px", display: "block" }}>{error}</small>}
+
+          <button
+            className="purple-button full"
+            onClick={handleReserve}
+            disabled={reserving || selectedType.available_supply < qty}
+          >
+            {reserving ? "Locking reservation…" : `Reserve tickets · $${((selectedType.price_cents * qty) / 100).toFixed(2)}`}
+            <ArrowRight size={16} />
+          </button>
+          <small className="safe">Locks stock with Supabase row lock for 10 minutes</small>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function Cart({
+  event,
+  ticketType,
+  qty,
+  reservation,
+  back,
+  checkout,
+}: {
+  event: LiveEvent;
+  ticketType: TicketType;
+  qty: number;
+  reservation: Reservation | null;
+  back: () => void;
+  checkout: () => void;
+}) {
+  const [timeLeft, setTimeLeft] = useState("");
+
+  useEffect(() => {
+    if (!reservation?.expires_at) return;
+    const expiry = new Date(reservation.expires_at).getTime();
+
+    const update = () => {
+      const rem = Math.max(0, Math.floor((expiry - Date.now()) / 1000));
+      const m = Math.floor(rem / 60);
+      const s = rem % 60;
+      setTimeLeft(`${m}:${String(s).padStart(2, "0")}`);
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [reservation]);
+
+  const subtotal = (ticketType.price_cents * qty) / 100;
+  const fee = subtotal * 0.08;
+  const total = subtotal + fee;
+
+  return (
+    <div className="checkout-page">
+      <button className="back-link" onClick={back}>
+        <ArrowLeft size={16} /> Back to event
+      </button>
+      <span className="eyebrow purple">YOUR CART</span>
+      <h1>Review your reservation</h1>
+
+      <div className="checkout-card">
+        {timeLeft && (
+          <div style={{ background: "#fef3c7", padding: "12px", borderRadius: "8px", color: "#92400e", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px", fontSize: "13px" }}>
+            <Clock size={16} />
+            <span>Reservation held! Expires in <b>{timeLeft}</b></span>
+          </div>
+        )}
+        <div className="cart-event">
+          <img src={event.image_url || ""} alt={event.title} />
+          <div>
+            <h3>{event.title}</h3>
+            <p>{event.venue}</p>
+            <span>{ticketType.name} · {qty} ticket{qty > 1 ? "s" : ""}</span>
+          </div>
+        </div>
+        <div className="price-line">
+          <span>Tickets</span>
+          <b>${subtotal.toFixed(2)}</b>
+        </div>
+        <div className="price-line">
+          <span>Service fee <small>8%</small></span>
+          <b>${fee.toFixed(2)}</b>
+        </div>
+        <div className="total-line">
+          <span>Total</span>
+          <b>${total.toFixed(2)}</b>
+        </div>
+        <button className="purple-button full" onClick={checkout}>
+          Proceed to Checkout <ArrowRight size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Checkout({
+  event,
+  ticketType,
+  qty,
+  reservation,
+  back,
+  onSuccess,
+}: {
+  event: LiveEvent;
+  ticketType: TicketType;
+  qty: number;
+  reservation: Reservation | null;
+  back: () => void;
+  onSuccess: (orderData: { order_id: string; total_cents: number; quantity: number; ticket_ids: string[]; ticket_type_name: string }) => void;
+}) {
+  const { address } = useAccount();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [buyerWallet, setBuyerWallet] = useState(address || "");
+
+  useEffect(() => {
+    if (address) setBuyerWallet(address);
+  }, [address]);
+
+  const subtotal = (ticketType.price_cents * qty) / 100;
+  const total = (subtotal * 1.08).toFixed(2);
+
+  const handlePay = async () => {
+    if (!reservation) {
+      setError("No active reservation found. Please choose your tickets again.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+
+    try {
+      const order = await completePurchase(reservation.id, buyerWallet || "0x0000000000000000000000000000000000000000");
+
+      if (buyerWallet && buyerWallet.startsWith("0x") && buyerWallet.length === 42) {
+        try {
+          const res = await fetch("/api/mint", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: buyerWallet,
+              eventId: event.id,
+              ticketType: ticketType.id,
+              orderId: Date.now(),
+              metadataURI: `ipfs://u-ticket-3/event-${event.id}-order-${order.order_id}.json`,
+            }),
+          });
+          const mintData = await res.json();
+          if (mintData.success && order.ticket_ids && order.ticket_ids.length > 0) {
+            await linkTicketNft(order.ticket_ids[0], Number(mintData.tokenId), mintData.transactionHash);
+          }
+        } catch (mintErr) {
+          console.warn("Minting automation notice:", mintErr);
+        }
+      }
+
+      onSuccess(order);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Payment processing failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="checkout-page">
+      <button className="back-link" onClick={back}>
+        <ArrowLeft size={16} /> Back to cart
+      </button>
+      <span className="eyebrow purple">SECURE CHECKOUT</span>
+      <h1>Complete your order</h1>
+
+      <div className="checkout-form">
+        <label>
+          Recipient Ethereum Sepolia Wallet (for NFT ticket ownership)
+          <input
+            placeholder="0x..."
+            value={buyerWallet}
+            onChange={(e) => setBuyerWallet(e.target.value)}
+          />
+        </label>
+
+        <div className="mock-stripe">
+          <TicketIcon size={18} />
+          <span>
+            <b>Payment Method</b>
+            <small>Test Checkout · Real order & NFT ticket recorded on completion</small>
+          </span>
+        </div>
+
+        {error && <small className="auth-error">{error}</small>}
+
+        <button className="purple-button full" onClick={handlePay} disabled={busy}>
+          {busy ? "Finalizing order and issuing tickets…" : `Confirm & Pay $${total}`}
+          {!busy && <ArrowRight size={16} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Success({
+  order,
+  event,
+  onViewTickets,
+}: {
+  order: { order_id: string; total_cents: number; quantity: number; ticket_ids: string[]; ticket_type_name: string } | null;
+  event: LiveEvent;
+  onViewTickets: () => void;
+}) {
+  return (
+    <div className="success">
+      <div>✓</div>
+      <span className="eyebrow purple">ORDER CONFIRMED</span>
+      <h1>You&apos;re going to<br /><em>{event.title}</em></h1>
+      <p>
+        Your digital ticket is ready! Order #{order?.order_id?.slice(0, 8) || "SUCCESS"} ·
+        {order?.quantity || 1} {order?.ticket_type_name || "Tickets"}
+      </p>
+      <button className="purple-button" onClick={onViewTickets}>
+        View in My Tickets <TicketIcon size={16} />
+      </button>
+    </div>
+  );
+}
+
+function Auth({ onDone }: { onDone: () => void }) {
+  const [register, setRegister] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const result = register
+        ? await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } })
+        : await supabase.auth.signInWithPassword({ email, password });
+      if (result.error) throw result.error;
+      onDone();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Authentication failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+        },
+      });
+      if (error) {
+        if (error.message?.includes("provider is not enabled") || (error as any).code === "validation_failed") {
+          throw new Error("ระบบ Google Login ยังไม่ได้เปิดใช้งานใน Supabase Dashboard (ไปที่ Authentication > Providers > Google แล้วกด Enable)");
+        }
+        throw error;
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Google authentication failed");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="auth-page">
+      <div className="auth-card">
+        <span className="eyebrow purple">U TICKET 3 ACCOUNT</span>
+        <h1>{register ? "Create your account" : "Welcome back"}</h1>
+        <p>Save tickets, manage orders and collect every moment.</p>
+
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          disabled={busy}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "10px",
+            padding: "12px 16px",
+            border: "1px solid var(--line)",
+            borderRadius: "7px",
+            background: "#fff",
+            color: "var(--ink)",
+            fontWeight: 600,
+            fontSize: "14px",
+            cursor: "pointer",
+            marginTop: "16px",
+            transition: "0.2s",
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24">
+            <path
+              fill="#4285F4"
+              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+            />
+            <path
+              fill="#EA4335"
+              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+            />
+          </svg>
+          Continue with Google
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", margin: "20px 0", color: "var(--muted)", fontSize: "12px" }}>
+          <div style={{ flex: 1, height: "1px", background: "var(--line)" }} />
+          <span style={{ padding: "0 10px" }}>or with email</span>
+          <div style={{ flex: 1, height: "1px", background: "var(--line)" }} />
+        </div>
+
+        {register && (
+          <input placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
+        )}
+        <input placeholder="Email address" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        {error && <small className="auth-error">{error}</small>}
+        <button className="purple-button full" onClick={submit} disabled={busy}>
+          {busy ? "Please wait…" : register ? "Create account" : "Log in"}
+          {!busy && <ArrowRight size={16} />}
+        </button>
+        <button className="auth-switch" onClick={() => setRegister(!register)}>
+          {register ? "Already have an account? Log in" : "New here? Create an account"}
+        </button>
+        <small>Supabase Auth · Secure credentials & Google OAuth</small>
+      </div>
+    </div>
+  );
+}
+
+function MyTickets({ event }: { event: LiveEvent }) {
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeQr, setActiveQr] = useState<string | null>(null);
+
+  const fetchTickets = async () => {
+    setLoading(true);
+    try {
+      const list = await getMyTickets();
+      setTickets(list);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTickets();
+  }, []);
+
+  return (
+    <div className="tickets-page">
+      <span className="eyebrow purple">YOUR COLLECTION</span>
+      <h1>My tickets & Resale</h1>
+
+      <OwnedTicketCollection event={event} />
+
+      <section style={{ marginTop: "32px", marginBottom: "40px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <h2>Your Issued Tickets ({tickets.length})</h2>
+          <button className="outline-button" onClick={fetchTickets} style={{ margin: 0, padding: "6px 12px", display: "flex", gap: "6px", alignItems: "center" }}>
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
+
+        {loading && <p>Loading your tickets from Supabase…</p>}
+
+        {!loading && tickets.length === 0 && (
+          <div className="empty-tickets">
+            <TicketIcon size={24} />
+            <div>
+              <b>No tickets purchased on this account yet</b>
+              <span>Browse events to reserve and purchase your first ticket.</span>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          {tickets.map((t) => {
+            const ev = t.ticket_types?.events || event;
+            const isUsed = t.status === "USED";
+            return (
+              <div className="my-ticket" key={t.id}>
+                <img src={ev.image_url || event.image_url || ""} alt={ev.title} />
+                <div>
+                  <span className={isUsed ? "valid checked" : "valid"}>
+                    ● {isUsed ? "Checked in / Used" : "Valid ticket"}
+                  </span>
+                  <h2>{ev.title}</h2>
+                  <p>{ev.venue}</p>
+                  <b>{t.ticket_types?.name || "General Admission"} · Code: {t.ticket_code}</b>
+
+                  {t.token_id && (
+                    <small style={{ display: "block", color: "var(--purple)", marginTop: "6px", fontWeight: "bold" }}>
+                      NFT Token #{t.token_id} linked on Ethereum Sepolia
+                    </small>
+                  )}
+
+                  <button
+                    className="outline-button"
+                    onClick={() => setActiveQr(activeQr === t.id ? null : t.id)}
+                  >
+                    {activeQr === t.id ? "Hide QR" : "Show QR / Verify ticket"}
+                  </button>
+                </div>
+                <div className="qr-code">
+                  {activeQr === t.id ? (
+                    <QRCodeSVG value={t.qr_payload || t.ticket_code} size={112} />
+                  ) : (
+                    "▦"
+                  )}
+                  <small>{activeQr === t.id ? "Scan to verify" : "NFT ticket"}</small>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <ResalePanel />
+      <ResaleBuyerPanel />
+    </div>
+  );
+}
+
+function OwnedTicketCollection({ event }: { event: LiveEvent }) {
+  const { address } = useAccount();
+  const { data: nextToken } = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "nextTokenId",
+  });
+  const total = nextToken ? Number(nextToken) - 1 : 0;
+  const calls = Array.from({ length: Math.min(total, 50) }, (_, i) => ({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "ownerOf" as const,
+    args: [BigInt(i + 1)] as const,
+  }));
+
+  const owners = useReadContracts({
+    contracts: calls,
+    query: { enabled: Boolean(address && total > 0) },
+  });
+
+  const owned = owners.data
+    ?.map((result, i) => ({ tokenId: i + 1, owner: result.result as string | undefined }))
+    .filter((t) => t.owner && address && t.owner.toLowerCase() === address.toLowerCase()) || [];
+
+  return (
+    <section className="owned-collection">
+      <div className="collection-summary">
+        <div>
+          <strong>{owned.length}</strong>
+          <span>NFT tickets owned by connected wallet</span>
+        </div>
+        <small>
+          {owners.isLoading ? "Reading blockchain ownership…" : `${total} total tokens minted on Ethereum Sepolia`}
+        </small>
+      </div>
+
+      {owned.length === 0 && !owners.isLoading && (
+        <div className="empty-tickets">
+          <TicketIcon size={24} />
+          <div>
+            <b>No on-chain NFT tickets detected for your wallet</b>
+            <span>Connect your wallet to inspect tokens or mint one with the owner wallet.</span>
+          </div>
+        </div>
+      )}
+
+      {owned.length > 0 && (
+        <div className="owned-grid">
+          {owned.map((ticket) => (
+            <article className="owned-card" key={ticket.tokenId}>
+              <img src={event.image_url || ""} alt={event.title} />
+              <div>
+                <span className="valid">● On-chain Verified</span>
+                <h3>{event.title}</h3>
+                <strong>Token #{ticket.tokenId}</strong>
+                <small>U Ticket 3 · Sepolia Contract</small>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ResalePanel() {
+  const { address, isConnected } = useAccount();
+  const [tokenId, setTokenId] = useState("");
+  const [price, setPrice] = useState("0.00011");
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { isLoading, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const owner = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "ownerOf",
+    args: tokenId ? [BigInt(tokenId)] : undefined,
+    query: { enabled: Boolean(tokenId) },
+  });
+
+  const original = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "originalPriceWei",
+    args: tokenId ? [BigInt(tokenId)] : undefined,
+    query: { enabled: Boolean(tokenId) },
+  });
+
+  const list = async () => {
+    if (!tokenId) return;
+    writeContract({
+      address: ticketContractAddress,
+      abi: ticketContractAbi,
+      functionName: "list",
+      args: [BigInt(tokenId), parseEther(price)],
+    });
+  };
+
+  const cancel = () => {
+    if (!tokenId) return;
+    writeContract({
+      address: ticketContractAddress,
+      abi: ticketContractAbi,
+      functionName: "cancelListing",
+      args: [BigInt(tokenId)],
+    });
+  };
+
+  const owns = Boolean(address && owner.data && String(owner.data).toLowerCase() === address.toLowerCase());
+
+  return (
+    <div className="resale-panel">
+      <h2>List your ticket for Resale</h2>
+      <p>
+        Sell your NFT ticket fairly. The smart contract enforces a maximum 10% cap above the original price to prevent scalping.
+      </p>
+
+      <div className="resale-fields">
+        <input
+          aria-label="Token ID"
+          placeholder="Token ID"
+          value={tokenId}
+          onChange={(e) => setTokenId(e.target.value.replace(/\D/g, ""))}
+        />
+        <input
+          aria-label="Resale price"
+          placeholder="ETH price (max +10%)"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+        />
+      </div>
+
+      {original.data && (
+        <small>
+          Original price: {Number(original.data) / 1e18} ETH · Maximum resale limit: +10%
+        </small>
+      )}
+
+      <div className="resale-actions">
+        <button
+          className="purple-button"
+          disabled={!isConnected || !owns || isPending || isLoading}
+          onClick={list}
+        >
+          {isPending || isLoading ? "Confirming on chain…" : "List for resale"}
+        </button>
+        <button
+          className="outline-button"
+          disabled={!isConnected || !owns || isPending || isLoading}
+          onClick={cancel}
+        >
+          Cancel listing
+        </button>
+      </div>
+
+      {owner.error && <small className="auth-error">Token not found or not yet minted.</small>}
+      {!owns && tokenId && owner.data && (
+        <small className="auth-error">Your connected wallet is not the owner of token #{tokenId}.</small>
+      )}
+      {(hash || isSuccess) && (
+        <a href={`https://sepolia.etherscan.io/tx/${hash}`} target="_blank" rel="noreferrer">
+          View transaction on Sepolia Etherscan ↗
+        </a>
+      )}
+      {error && <small className="auth-error">{error.message.slice(0, 140)}</small>}
+    </div>
+  );
+}
+
+function ResaleBuyerPanel() {
+  const { address, isConnected } = useAccount();
+  const [tokenId, setTokenId] = useState("");
+  const { data: listing, error: listingError } = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "listings",
+    args: tokenId ? [BigInt(tokenId)] : undefined,
+    query: { enabled: Boolean(tokenId) },
+  });
+
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { isLoading, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const seller = listing?.[0] as `0x${string}` | undefined;
+  const price = listing?.[1] as bigint | undefined;
+  const available = Boolean(seller && seller !== "0x0000000000000000000000000000000000000000" && price && price > BigInt(0));
+  const sameOwner = Boolean(address && seller && address.toLowerCase() === seller.toLowerCase());
+
+  const buy = () => {
+    if (!tokenId || !price) return;
+    writeContract({
+      address: ticketContractAddress,
+      abi: ticketContractAbi,
+      functionName: "buy",
+      args: [BigInt(tokenId)],
+      value: price,
+    });
+  };
+
+  return (
+    <div className="resale-panel buyer-panel">
+      <span className="eyebrow purple">BUY FROM ANOTHER FAN</span>
+      <h2>Find a resale ticket</h2>
+      <p>
+        Enter a listed token ID to verify its on-chain listing. The contract automatically pays the creator royalty and transfers NFT ownership in a single transaction.
+      </p>
+
+      <div className="resale-fields">
+        <input
+          aria-label="Resale token ID"
+          placeholder="Token ID to buy"
+          value={tokenId}
+          onChange={(e) => setTokenId(e.target.value.replace(/\D/g, ""))}
+        />
+      </div>
+
+      {available && (
+        <div className="listing-summary">
+          <span>Listed by <b>{seller?.slice(0, 6)}…{seller?.slice(-4)}</b></span>
+          <strong>{price ? Number(price) / 1e18 : 0} ETH</strong>
+        </div>
+      )}
+
+      {tokenId && listingError && <small className="auth-error">This token is not available or has no active listing.</small>}
+      {tokenId && !available && !listingError && <small>No active listing found for token #{tokenId}.</small>}
+
+      <button
+        className="purple-button"
+        disabled={!isConnected || !available || sameOwner || isPending || isLoading}
+        onClick={buy}
+      >
+        {isPending || isLoading ? "Confirming purchase…" : isSuccess ? "Ticket purchased ✓" : "Buy resale ticket"}
+      </button>
+
+      {sameOwner && <small>You cannot buy your own listing.</small>}
+      {!isConnected && <small>Connect MetaMask before purchasing.</small>}
+      {(hash || isSuccess) && (
+        <a href={`https://sepolia.etherscan.io/tx/${hash}`} target="_blank" rel="noreferrer">
+          View purchase on Sepolia Etherscan ↗
+        </a>
+      )}
+      {error && <small className="auth-error">{error.message.slice(0, 140)}</small>}
+    </div>
+  );
+}
+
+function Organizer({ events }: { events: LiveEvent[] }) {
+  const [ticketCode, setTicketCode] = useState("");
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState("");
+  const [scanning, setScanning] = useState(false);
+
+  const handleVerify = async () => {
+    if (!ticketCode) return;
+    setScanning(true);
+    setError("");
+    setResult(null);
+
+    try {
+      const res = await checkInTicket(ticketCode.trim().toUpperCase());
+      if (!res.success) {
+        setError(res.error === "ALREADY_USED" ? "This ticket has already been checked in!" : "Ticket code invalid or not found.");
+      } else {
+        setResult(res);
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Verification failed");
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  return (
+    <div className="organizer-page">
+      <span className="eyebrow purple">ORGANIZER SPACE</span>
+      <h1>Gate Check-In & Event Management</h1>
+
+      <div className="organizer-stats">
+        <div>
+          <small>ACTIVE EVENTS</small>
+          <b>{events.length}</b>
+          <span>Live on Supabase</span>
+        </div>
+        <div>
+          <small>SMART CONTRACT</small>
+          <b style={{ fontSize: "16px", wordBreak: "break-all" }}>{ticketContractAddress.slice(0, 10)}…</b>
+          <span>Ethereum Sepolia</span>
+        </div>
+        <div>
+          <small>STATUS</small>
+          <b>Operational</b>
+          <span>10% Resale Cap Active</span>
+        </div>
+      </div>
+
+      <div className="organizer-table">
+        <h2>Gate Check-In Scanner</h2>
+        <p>Verify attendee ticket code or QR payload against Supabase and Blockchain.</p>
+
+        <div style={{ display: "flex", gap: "10px", marginTop: "16px", maxWidth: "500px" }}>
+          <input
+            placeholder="Enter ticket code (e.g. UT3-ABC12345)"
+            value={ticketCode}
+            onChange={(e) => setTicketCode(e.target.value)}
+            style={{ flex: 1, padding: "12px", border: "1px solid var(--line)", borderRadius: "6px" }}
+          />
+          <button className="purple-button" onClick={handleVerify} disabled={scanning}>
+            {scanning ? "Verifying…" : "Check In"}
+          </button>
+        </div>
+
+        {error && (
+          <div style={{ marginTop: "16px", padding: "12px", background: "#fee2e2", color: "#991b1b", borderRadius: "6px" }}>
+            [Invalid] {error}
+          </div>
+        )}
+
+        {result && result.success && (
+          <div style={{ marginTop: "16px", padding: "16px", background: "#dcfce7", color: "#166534", borderRadius: "6px" }}>
+            <h3>Valid Ticket Checked In</h3>
+            <p>Event: <b>{result.event_title}</b></p>
+            <p>Tier: <b>{result.ticket_type}</b></p>
+            <p>Code: <b>{result.ticket_code}</b></p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WalletModal({ close }: { close: () => void }) {
+  const { address, isConnected } = useAccount();
+  const { connect, connectors, isPending } = useConnect();
+  const { disconnect } = useDisconnect();
+
+  return (
+    <div className="modal-bg" onClick={close}>
+      <div className="wallet-modal" onClick={(e) => e.stopPropagation()}>
+        <button onClick={close} aria-label="Close"><X /></button>
+        <Wallet size={28} />
+        <h2>{isConnected ? "Wallet connected" : "Connect your wallet"}</h2>
+        {isConnected ? (
+          <>
+            <p className="wallet-address">{address}</p>
+            <button className="wallet-option" onClick={() => { disconnect(); close(); }}>
+              Disconnect <X size={15} />
+            </button>
+          </>
+        ) : (
+          <>
+            <p>Connect MetaMask to collect U Ticket 3 NFTs on Ethereum Sepolia testnet.</p>
+            {connectors.map((c) => (
+              <button
+                className="wallet-option"
+                key={c.uid}
+                disabled={isPending}
+                onClick={() => connect({ connector: c })}
+              >
+                {isPending ? "Connecting…" : c.name}
+                <ArrowRight size={15} />
+              </button>
+            ))}
+          </>
+        )}
+        <small>Ethereum Sepolia only · Never share your seed phrase</small>
+      </div>
+    </div>
+  );
+}
