@@ -1,0 +1,7 @@
+insert into events (title,slug,description,artist,venue,starts_at,image_url,status) values
+('Neon Horizon Live','neon-horizon-live','A full-spectrum live set where sound, light and motion converge.','Kira','Warehouse 26, Bangkok','2026-11-18T20:00:00+07:00','https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1000&q=80','PUBLISHED'),
+('Afterglow FM','afterglow-fm','An intimate after-hours radio world brought to life.','Maya Lune','The Star, Singapore','2026-12-04T19:30:00+08:00','https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1000&q=80','PUBLISHED'),
+('Void Signal','void-signal','An underground pulse of guitars, granular synths and light.','Rift + guests','East Hall, Tokyo','2026-12-12T21:00:00+09:00','https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=1000&q=80','PUBLISHED') on conflict (slug) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'General Admission',4200,250,250 from events where slug='neon-horizon-live' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Priority Entry',7800,60,60 from events where slug='neon-horizon-live' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'VIP Experience',16000,20,20 from events where slug='neon-horizon-live' on conflict (event_id,name) do nothing;

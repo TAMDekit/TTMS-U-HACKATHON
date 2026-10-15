@@ -1,4 +1,4 @@
-# ChainTicket
+# U Ticket 3
 
 ## Current MVP architecture
 
@@ -57,3 +57,13 @@ ChainTicket uses a dark “signal / live moment” visual language: electric cya
 6. Add wagmi/viem mock wallet mode, then ERC-721/1155 testnet minting.
 
 Never use real card data or mainnet funds. Keep all secrets in `.env.local`.
+
+## Supabase real-data setup
+
+1. Create a Supabase project and copy its URL and anon key into `.env.local` using `.env.example`.
+2. Run `supabase/schema.sql` in Supabase SQL Editor.
+3. Run `supabase/seed.sql` to create real event and ticket rows.
+4. Enable Email provider in Supabase Authentication.
+5. Never expose a service-role key in `NEXT_PUBLIC_*` variables.
+
+The browser auth client and Base Sepolia wallet provider are wired in the app. The live data adapter is in `lib/events.ts`; when Supabase is configured, database errors are surfaced instead of silently replacing a failed write with fake success.
