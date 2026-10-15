@@ -1044,10 +1044,14 @@ function Auth({ onDone }: { onDone: () => void }) {
     setError("");
     try {
       const supabase = createSupabaseBrowserClient();
+      const redirectUrl = typeof window !== "undefined"
+        ? `${window.location.origin}${window.location.pathname}`
+        : undefined;
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+          redirectTo: redirectUrl,
         },
       });
       if (error) {
