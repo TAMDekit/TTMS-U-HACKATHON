@@ -2,7 +2,29 @@
   "name": "chainticket",
   "version": "0.1.0",
   "private": true,
-  "scripts": { "dev": "next dev", "build": "next build", "lint": "next lint", "typecheck": "tsc --noEmit" },
-  "dependencies": { "next": "15.5.0", "react": "19.1.0", "react-dom": "19.1.0", "lucide-react": "^0.468.0" },
-  "devDependencies": { "@types/node": "^22.10.0", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0", "typescript": "^5.7.0" }
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.117.3",
+    "@tanstack/react-query": "^5.104.2",
+    "lucide-react": "^0.468.0",
+    "next": "^15.5.7",
+    "qrcode.react": "^4.2.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "viem": "^2.57.7",
+    "wagmi": "^3.7.7",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
 }
