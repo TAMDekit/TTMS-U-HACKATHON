@@ -4,21 +4,28 @@ import { useEffect, useState, useTransition } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Bell,
   CalendarDays,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
   ExternalLink,
+  Lock,
   MapPin,
   Menu,
   Minus,
   Plus,
   RefreshCw,
   Search,
+  Share2,
+  Shield,
   ShieldCheck,
+  Sparkles,
   Tag,
   Ticket as TicketIcon,
+  Users,
   Wallet,
   X,
 } from "lucide-react";
@@ -40,6 +47,22 @@ import { reserveTickets, type Reservation } from "../lib/reservations";
 import { completePurchase, getMyTickets, linkTicketNft, checkInTicket, type Ticket } from "../lib/orders";
 
 const fallbackEvents: LiveEvent[] = [
+  {
+    id: 99,
+    title: "My Chemical Romance – Asia Tour",
+    slug: "my-chemical-romance-asia-tour",
+    artist: "My Chemical Romance",
+    category: "Concert",
+    venue: "Impact Challenger Hall 1, Bangkok",
+    starts_at: "2026-11-17T20:00:00+07:00",
+    image_url: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1200&q=80",
+    description: "Official Asia Tour 2026. Live at Impact Challenger Hall 1, Muang Thong Thani, Nonthaburi. Experience iconic anthems on-stage with verified ERC-721 smart contract tickets.",
+    ticket_types: [
+      { id: 991, event_id: 99, name: "Regular – Standing Zone A", price_cents: 350000, total_supply: 2000, available_supply: 12 },
+      { id: 992, event_id: 99, name: "Seats (Reserved Tier 1)", price_cents: 420000, total_supply: 800, available_supply: 0 },
+      { id: 993, event_id: 99, name: "VIP Lounge & Exclusive Soundcheck", price_cents: 750000, total_supply: 300, available_supply: 0 },
+    ],
+  },
   {
     id: 1,
     title: "BLACKPINK WORLD TOUR <BORN PINK> FINALE",
@@ -607,6 +630,35 @@ function Card({ event, open }: { event: LiveEvent; open: (e: LiveEvent) => void 
   );
 }
 
+// Helper for Proof of Work (PoW) anti-bot mining
+async function solveProofOfWork(
+  challenge: string,
+  difficulty = 3,
+  onProgress?: (nonce: number, hash: string) => void
+): Promise<{ nonce: number; hash: string }> {
+  const prefix = "0".repeat(difficulty);
+  let nonce = 0;
+  const encoder = new TextEncoder();
+
+  while (true) {
+    const data = encoder.encode(`${challenge}:${nonce}`);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+    if (nonce % 70 === 0 && onProgress) {
+      onProgress(nonce, hashHex);
+      await new Promise((r) => setTimeout(r, 8)); // non-blocking yield for UI animation
+    }
+
+    if (hashHex.startsWith(prefix)) {
+      if (onProgress) onProgress(nonce, hashHex);
+      return { nonce, hash: hashHex };
+    }
+    nonce++;
+  }
+}
+
 function Detail({
   event,
   ticketTypes,
@@ -632,13 +684,77 @@ function Detail({
 }) {
   const [reserving, setReserving] = useState(false);
   const [error, setError] = useState("");
+  const [alertsOn, setAlertsOn] = useState(true);
+  const [userStatus, setUserStatus] = useState<"none" | "interested" | "going">("none");
+
+  // PoW Anti-Bot Queue State
+  const [powModalOpen, setPowModalOpen] = useState(false);
+  const [powProgress, setPowProgress] = useState(0);
+  const [powNonce, setPowNonce] = useState(0);
+  const [powHash, setPowHash] = useState("");
+  const [powStatusText, setPowStatusText] = useState("");
+
+  // Resale Listing Modal State
+  const [showResaleModal, setShowResaleModal] = useState(false);
+  const [showSellModal, setShowSellModal] = useState(false);
+
+  // Wagmi contracts for on-chain Resale
+  const { address, isConnected } = useAccount();
+  const { writeContract, data: resaleTxHash, isPending: resaleIsPending, error: resaleError } = useWriteContract();
+  const { isLoading: resaleIsConfirming, isSuccess: resaleIsSuccess } = useWaitForTransactionReceipt({ hash: resaleTxHash });
+
+  // On-chain Sell listing inputs
+  const [sellTokenId, setSellTokenId] = useState("");
+  const [sellPriceEth, setSellPriceEth] = useState("0.038");
+
+  // On-chain active listings data lookup for token IDs #1, #2, #3, #4
+  const listingTokens = [1, 2, 3];
+  const listingCalls = listingTokens.map((id) => ({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "listings" as const,
+    args: [BigInt(id)] as const,
+  }));
+
+  const listingsData = useReadContracts({
+    contracts: listingCalls,
+  });
+
   const selectedType = ticketTypes[ticketIndex] || ticketTypes[0];
 
-  const handleReserve = async () => {
+  const handleStartPurchase = () => {
     if (!authed) {
       onRequireAuth();
       return;
     }
+    // Launch Proof of Work challenge modal
+    setPowModalOpen(true);
+    setPowProgress(10);
+    setPowStatusText("Initializing anti-bot queue challenge…");
+    const challenge = `uticket3-pow-${event.id}-${selectedType.id}-${Date.now()}`;
+
+    solveProofOfWork(challenge, 3, (nonce, hash) => {
+      setPowNonce(nonce);
+      setPowHash(hash);
+      setPowProgress((prev) => Math.min(95, prev + 4));
+      setPowStatusText(`Verifying Human PoW Nonce #${nonce}…`);
+    })
+      .then((res) => {
+        setPowProgress(100);
+        setPowStatusText(`PoW Verified! Golden Nonce: ${res.nonce}`);
+        setTimeout(() => {
+          setPowModalOpen(false);
+          executeReservation();
+        }, 700);
+      })
+      .catch((err) => {
+        console.error(err);
+        setPowModalOpen(false);
+        setError("Anti-bot verification encountered an error. Please try again.");
+      });
+  };
+
+  const executeReservation = async () => {
     setReserving(true);
     setError("");
     try {
@@ -651,8 +767,6 @@ function Detail({
       } else if (msg.includes("AUTH_REQUIRED")) {
         onRequireAuth();
       } else {
-        // Fallback demo reservation if this event ticket type has not yet been seeded to Supabase Cloud
-        // Allows testing full Cart, Checkout, NFT Minting, and Resale flow seamlessly
         console.warn("Using demo reservation fallback for ticketType:", selectedType.id, msg);
         const mockReservation: Reservation = {
           id: "res-demo-" + Date.now(),
@@ -668,82 +782,505 @@ function Detail({
     }
   };
 
+  const handleBuyResale = (tokenId: number, priceWei: bigint) => {
+    if (!isConnected) {
+      alert("Please connect your MetaMask / Web3 wallet to execute on-chain purchase.");
+      return;
+    }
+    writeContract({
+      address: ticketContractAddress,
+      abi: ticketContractAbi,
+      functionName: "buy",
+      args: [BigInt(tokenId)],
+      value: priceWei,
+    });
+  };
+
+  const handleListResale = () => {
+    if (!isConnected) {
+      alert("Please connect your wallet first.");
+      return;
+    }
+    if (!sellTokenId || !sellPriceEth) return;
+    writeContract({
+      address: ticketContractAddress,
+      abi: ticketContractAbi,
+      functionName: "list",
+      args: [BigInt(sellTokenId), parseEther(sellPriceEth)],
+    });
+  };
+
   const dateFormatted = new Date(event.starts_at).toLocaleDateString("en-US", {
     weekday: "short",
-    day: "numeric",
     month: "short",
+    day: "numeric",
     year: "numeric",
+  });
+
+  const timeFormatted = new Date(event.starts_at).toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
   });
 
   return (
-    <div className="detail-page">
-      <button className="back-link" onClick={back}>
-        <ArrowLeft size={16} /> All events
-      </button>
-      <div className="detail-banner" style={{ backgroundImage: `url(${event.image_url})` }} />
-      <div className="detail-columns">
-        <article>
-          <span className="eyebrow purple">LIVE EVENT</span>
-          <h1>{event.title}</h1>
-          <p className="detail-artist">{event.artist}</p>
-          <div className="info-row">
-            <span><CalendarDays size={18} />{dateFormatted}</span>
-            <span><MapPin size={18} />{event.venue}</span>
-          </div>
-          <h2>About this event</h2>
-          <p className="body-copy">{event.description}</p>
-          <p className="body-copy">
-            Each ticket is recorded on Ethereum Sepolia and stored in your profile.
-            Ticket reservation locks inventory for 10 minutes to prevent overselling.
-          </p>
-        </article>
-
-        <aside className="buy-panel">
-          <div className="panel-top">
-            <strong>Choose your ticket</strong>
-            <span className="timer">10-min reservation hold</span>
-          </div>
-
-          {ticketTypes.map((t, i) => (
-            <button
-              className={ticketIndex === i ? "ticket-option selected" : "ticket-option"}
-              key={t.id}
-              onClick={() => setTicketIndex(i)}
-            >
-              <span>
-                <b>{t.name}</b>
-                <small>{t.available_supply} remaining of {t.total_supply}</small>
-              </span>
-              <strong>${(t.price_cents / 100).toFixed(2)}</strong>
-            </button>
-          ))}
-
-          <div className="stepper">
-            <span>Quantity (max 6)</span>
-            <button onClick={() => setQty(Math.max(1, qty - 1))} aria-label="Decrease">
-              <Minus size={15} />
-            </button>
-            <b>{qty}</b>
-            <button onClick={() => setQty(Math.min(6, qty + 1))} aria-label="Increase">
-              <Plus size={15} />
-            </button>
-          </div>
-
-          {error && <small className="auth-error" style={{ marginBottom: "12px", display: "block" }}>{error}</small>}
-
-          <button
-            className="purple-button full"
-            onClick={handleReserve}
-            disabled={reserving || selectedType.available_supply < qty}
-          >
-            {reserving ? "Locking reservation…" : `Reserve tickets · $${((selectedType.price_cents * qty) / 100).toFixed(2)}`}
-            <ArrowRight size={16} />
-          </button>
-          <small className="safe">Locks stock with Supabase row lock for 10 minutes</small>
-        </aside>
+    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "10px 0 60px" }}>
+      {/* Breadcrumb Navigation */}
+      <div className="ref-breadcrumb">
+        <a onClick={back}>Home</a>
+        <ChevronRight size={14} />
+        <a>Concert Tickets</a>
+        <ChevronRight size={14} />
+        <span className="current">{event.title}</span>
       </div>
+
+      <div className="ref-detail-grid">
+        {/* Left Column: Event Visual & Social actions */}
+        <div className="ref-left-col">
+          <div className="ref-banner-card">
+            <img src={event.image_url || "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1200&q=80"} alt={event.title} />
+            <div className="ref-banner-badge">
+              <ShieldCheck size={14} style={{ color: "#4ade80" }} />
+              Smart Contract Guaranteed
+            </div>
+          </div>
+
+          <div className="ref-event-title-wrap">
+            <div className="ref-verified-pill">
+              <span />
+              Official Verified Resale
+            </div>
+            <h1 className="ref-event-title">{event.title}</h1>
+          </div>
+
+          <div className="ref-meta-list">
+            <div className="ref-meta-item">
+              <div className="ref-meta-icon">
+                <CalendarDays size={18} />
+              </div>
+              <div className="ref-meta-text">
+                <strong>{dateFormatted}</strong>
+                <span>Doors open 6:30 PM • Starts {timeFormatted} GMT+7</span>
+              </div>
+            </div>
+
+            <div className="ref-meta-item">
+              <div className="ref-meta-icon">
+                <MapPin size={18} />
+              </div>
+              <div className="ref-meta-text">
+                <strong>{event.venue.split(",")[0] || "Impact Challenger Hall 1"}</strong>
+                <span>Popular Arena • Seating & Standing Capacity 20,000</span>
+              </div>
+            </div>
+
+            <div className="ref-meta-item">
+              <div className="ref-meta-icon">
+                <MapPin size={18} />
+              </div>
+              <div className="ref-meta-text">
+                <strong>Bangkok, Thailand</strong>
+                <span>Muang Thong Thani, Nonthaburi</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Row */}
+          <div className="ref-action-row">
+            <button className="ref-btn-sell" onClick={() => setShowSellModal(true)}>
+              <Tag size={16} />
+              Sell your tickets
+            </button>
+            <button
+              className={`ref-btn-action ${userStatus === "interested" ? "active" : ""}`}
+              onClick={() => setUserStatus(userStatus === "interested" ? "none" : "interested")}
+            >
+              ★ Interested
+            </button>
+            <button
+              className={`ref-btn-action ${userStatus === "going" ? "active" : ""}`}
+              onClick={() => setUserStatus(userStatus === "going" ? "none" : "going")}
+            >
+              <Check size={15} />
+              Going
+            </button>
+            <button
+              className="ref-btn-share"
+              aria-label="Share"
+              onClick={() => {
+                if (navigator.share) {
+                  navigator.share({ title: event.title, url: window.location.href });
+                } else {
+                  navigator.clipboard.writeText(window.location.href);
+                  alert("Link copied to clipboard!");
+                }
+              }}
+            >
+              <Share2 size={18} />
+            </button>
+          </div>
+
+          {/* Attendee Preview Box */}
+          <div className="ref-attendees-card">
+            <div className="ref-attendees-header">
+              <strong>Who&apos;s going?</strong>
+              <button onClick={() => alert("Showing 116 verified event attendees on-chain.")}>Show more</button>
+            </div>
+            <div className="ref-attendees-sub">
+              <b>21</b> going • <b>95</b> interested
+            </div>
+            <div className="ref-attendees-row">
+              <div className="ref-avatar-stack">
+                <div className="ref-avatar bg-1">MF</div>
+                <div className="ref-avatar bg-2">AK</div>
+                <div className="ref-avatar bg-3">PT</div>
+                <div className="ref-avatar bg-4">SN</div>
+                <div className="ref-avatar bg-5">WB</div>
+                <div className="ref-avatar more">+111</div>
+              </div>
+              <span className="ref-connect-prompt">Connect wallet to see friends</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Tickets Section */}
+        <div className="ref-right-col">
+          <div className="ref-tickets-head">
+            <div className="ref-tickets-title-wrap">
+              <h2 className="ref-tickets-title">Tickets</h2>
+              <div className="ref-tickets-counts">
+                <span className="ref-avail-dot" />
+                <span><b>12 available</b></span>
+                <span>•</span>
+                <span>14 sold</span>
+                <span>•</span>
+                <span>74 wanted</span>
+              </div>
+            </div>
+            <div className="ref-cap-badge">
+              <Lock size={12} />
+              Capped at original price + 20% max
+            </div>
+          </div>
+
+          {/* Push Notifications Toggle */}
+          <div className="ref-alert-box">
+            <div className="ref-alert-left">
+              <div className="ref-alert-icon">
+                <Bell size={18} />
+              </div>
+              <div className="ref-alert-text">
+                <strong>Ticket alerts</strong>
+                <span>Get instant push & wallet notification when tickets are listed</span>
+              </div>
+            </div>
+            <div
+              className={`ref-toggle ${alertsOn ? "" : "off"}`}
+              onClick={() => setAlertsOn(!alertsOn)}
+            >
+              <div className="ref-toggle-knob" />
+            </div>
+          </div>
+
+          <div className="ref-section-subhead">
+            <span>Entrance tickets</span>
+            <small>All tickets minted as secure ERC-721 NFTs</small>
+          </div>
+
+          {/* Ticket Tier 1: Active / Available with PoW & Resale */}
+          <div className="ref-ticket-card highlighted">
+            <div className="ref-ticket-card-top">
+              <div className="ref-tier-info">
+                <div className="ref-tier-badge-row">
+                  <span className="ref-tier-name">Regular – Standing Zone A</span>
+                  <span className="ref-badge-avail">AVAILABLE</span>
+                </div>
+                <span className="ref-tier-sub">Tue, Nov 17, 8:00 PM • Fast-track entry gate 2</span>
+              </div>
+              <span className="ref-tier-count-pill">
+                <TicketIcon size={12} />
+                12 left
+              </span>
+            </div>
+
+            <div className="ref-ticket-card-bottom">
+              <div className="ref-price-block">
+                <span className="ref-price-label">RESALE PRICE FROM</span>
+                <span className="ref-price-val">
+                  ฿3,500 <small>(~0.038 ETH)</small>
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button className="ref-btn-listings" onClick={() => setShowResaleModal(true)}>
+                  VIEW 12 LISTINGS <ArrowRight size={14} />
+                </button>
+                <button
+                  className="ref-btn-listings"
+                  style={{ background: "#4338ca" }}
+                  onClick={handleStartPurchase}
+                  disabled={reserving}
+                >
+                  <Sparkles size={14} />
+                  {reserving ? "Holding…" : "RESERVE"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Ticket Tier 2: Sold Out with Waitlist */}
+          <div className="ref-ticket-card">
+            <div className="ref-ticket-card-top">
+              <div className="ref-tier-info">
+                <div className="ref-tier-badge-row">
+                  <span className="ref-tier-name">Seats (Reserved Tier 1)</span>
+                  <span className="ref-badge-sold">SOLD OUT</span>
+                </div>
+                <span className="ref-tier-sub">Tue, Nov 17, 8:00 PM • Blocks A2, B2 reserved seating</span>
+              </div>
+              <span className="ref-tier-count-pill sold">
+                <TicketIcon size={12} />
+                0 available
+              </span>
+            </div>
+
+            <div className="ref-ticket-card-bottom">
+              <div className="ref-price-block">
+                <span className="ref-price-label">ORIGINAL PRICE</span>
+                <span className="ref-price-val sold">฿4,200</span>
+              </div>
+              <button
+                className="ref-btn-waitlist"
+                onClick={() => alert("Added to Waitlist! You will receive an on-chain alert when Seats are listed for resale.")}
+              >
+                <Bell size={13} />
+                Join waitlist (34 waiting)
+              </button>
+            </div>
+          </div>
+
+          {/* Ticket Tier 3: Sold Out with Waitlist */}
+          <div className="ref-ticket-card">
+            <div className="ref-ticket-card-top">
+              <div className="ref-tier-info">
+                <div className="ref-tier-badge-row">
+                  <span className="ref-tier-name">VIP Lounge & Exclusive Soundcheck</span>
+                  <span className="ref-badge-sold">SOLD OUT</span>
+                </div>
+                <span className="ref-tier-sub">Tue, Nov 17, 5:30 PM • VIP Lounge + Commemorative Lanyard</span>
+              </div>
+              <span className="ref-tier-count-pill sold">
+                <TicketIcon size={12} />
+                0 available
+              </span>
+            </div>
+
+            <div className="ref-ticket-card-bottom">
+              <div className="ref-price-block">
+                <span className="ref-price-label">ORIGINAL PRICE</span>
+                <span className="ref-price-val sold">฿7,500</span>
+              </div>
+              <button
+                className="ref-btn-waitlist"
+                onClick={() => alert("Added to Waitlist! You will receive an on-chain alert when VIP Lounge tickets are listed.")}
+              >
+                <Bell size={13} />
+                Join waitlist (40 waiting)
+              </button>
+            </div>
+          </div>
+
+          {error && <small className="auth-error" style={{ display: "block" }}>{error}</small>}
+
+          {/* Security Guarantee Box */}
+          <div className="ref-security-box">
+            <div className="ref-security-icon">
+              <Shield size={18} />
+            </div>
+            <div className="ref-security-text">
+              <strong>100% Anti-Scalper & Anti-Fraud Guarantee.</strong> Every resale ticket on U Ticket 3 is re-issued with a dynamic QR code connected directly to the venue box office smart contract. Fraudulent barcodes cannot enter.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Proof of Work (PoW) Anti-Bot Challenge Modal */}
+      {powModalOpen && (
+        <div className="modal-bg" style={{ zIndex: 100 }}>
+          <div className="pow-modal-card">
+            <div className="pow-pulse-ring">
+              <Lock size={26} color="#c084fc" />
+            </div>
+            <span className="eyebrow purple" style={{ color: "#a855f7" }}>PROOF OF WORK VERIFICATION</span>
+            <h3 style={{ fontSize: "20px", margin: "10px 0 6px" }}>Fair Queue Verification</h3>
+            <p style={{ fontSize: "13px", color: "#cbd5e1", margin: 0 }}>
+              Computing anti-scalper cryptographic PoW challenge in your browser to guarantee zero bots.
+            </p>
+
+            <div className="pow-progress-track">
+              <div className="pow-progress-fill" style={{ width: `${powProgress}%` }} />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#94a3b8" }}>
+              <span>{powStatusText}</span>
+              <span>Nonce #{powNonce}</span>
+            </div>
+
+            <div className="pow-hash-stream">
+              HASH: {powHash || "0000000000000000000000000000000000000000000000000000000000000000"}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resale Exchange Listings Modal */}
+      {showResaleModal && (
+        <div className="modal-bg" style={{ zIndex: 90 }} onClick={() => setShowResaleModal(false)}>
+          <div className="ref-listings-modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div>
+                <span className="eyebrow purple">ERC-721 RESALE MARKET</span>
+                <h2 style={{ margin: "4px 0 0", fontSize: "20px" }}>Verified Listings (Regular Zone A)</h2>
+              </div>
+              <button
+                onClick={() => setShowResaleModal(false)}
+                style={{ background: "none", border: 0, cursor: "pointer", color: "#6b7280" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: "12px", color: "#6b7280", margin: "0 0 16px" }}>
+              Buy directly from fan to fan on Ethereum Sepolia. Smart contract guarantees original price + max 10-20% resale cap and automatic royalty distribution.
+            </p>
+
+            {resaleIsSuccess && (
+              <div style={{ padding: "12px", background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "8px", marginBottom: "12px", color: "#065f46", fontSize: "13px" }}>
+                ✓ Resale transaction confirmed on Sepolia! NFT ownership transferred.
+              </div>
+            )}
+
+            {resaleError && (
+              <div style={{ padding: "12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", marginBottom: "12px", color: "#991b1b", fontSize: "12px" }}>
+                {resaleError.message.slice(0, 160)}
+              </div>
+            )}
+
+            {/* List of active mock & on-chain listings */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {[
+                { tokenId: 1, seller: "0x7F2A...3B91", priceThb: "฿3,500", priceEth: "0.038 ETH", priceWei: parseEther("0.038"), verified: true },
+                { tokenId: 2, seller: "0x4C19...8D22", priceThb: "฿3,650", priceEth: "0.039 ETH", priceWei: parseEther("0.039"), verified: true },
+                { tokenId: 3, seller: "0x98E1...F5A3", priceThb: "฿3,800", priceEth: "0.041 ETH", priceWei: parseEther("0.041"), verified: true },
+              ].map((listing) => (
+                <div key={listing.tokenId} className="ref-listing-item">
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <strong style={{ fontSize: "14px", color: "#111827" }}>Ticket NFT #{listing.tokenId}</strong>
+                      <span className="ref-badge-avail">VERIFIED RESALE</span>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "3px" }}>
+                      Seller: {listing.seller} • Zone A Standing
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontWeight: "800", color: "#23085a", fontSize: "15px" }}>{listing.priceThb}</div>
+                      <div style={{ fontSize: "11px", color: "#6b7280" }}>{listing.priceEth}</div>
+                    </div>
+                    <button
+                      className="ref-btn-listings"
+                      onClick={() => handleBuyResale(listing.tokenId, listing.priceWei)}
+                      disabled={resaleIsPending || resaleIsConfirming}
+                    >
+                      {resaleIsPending || resaleIsConfirming ? "Processing…" : "Buy NFT"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: "20px", textAlign: "center" }}>
+              <button
+                className="outline-button"
+                style={{ margin: "0 auto", fontSize: "12px" }}
+                onClick={() => {
+                  setShowResaleModal(false);
+                  setShowSellModal(true);
+                }}
+              >
+                Have a ticket? List it for resale here
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sell Your Ticket Modal */}
+      {showSellModal && (
+        <div className="modal-bg" style={{ zIndex: 90 }} onClick={() => setShowSellModal(false)}>
+          <div className="ref-listings-modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div>
+                <span className="eyebrow purple">LIST YOUR NFT TICKET</span>
+                <h2 style={{ margin: "4px 0 0", fontSize: "20px" }}>Sell on Verified Resale</h2>
+              </div>
+              <button
+                onClick={() => setShowSellModal(false)}
+                style={{ background: "none", border: 0, cursor: "pointer", color: "#6b7280" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: "12px", color: "#6b7280", margin: "0 0 16px" }}>
+              List your ERC-721 ticket on the Sepolia smart contract. The price cap (+10% to +20%) is strictly enforced on-chain to protect fans from scalping.
+            </p>
+
+            {resaleIsSuccess && (
+              <div style={{ padding: "12px", background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "8px", marginBottom: "12px", color: "#065f46", fontSize: "13px" }}>
+                ✓ Ticket successfully listed on Sepolia contract!
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div>
+                <label style={{ fontSize: "12px", fontWeight: "600", color: "#374151", display: "block", marginBottom: "4px" }}>
+                  NFT Token ID
+                </label>
+                <input
+                  style={{ width: "100%", padding: "10px", border: "1px solid #e5e7eb", borderRadius: "8px", fontSize: "14px" }}
+                  placeholder="e.g. 1"
+                  value={sellTokenId}
+                  onChange={(e) => setSellTokenId(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "12px", fontWeight: "600", color: "#374151", display: "block", marginBottom: "4px" }}>
+                  Resale Price (ETH)
+                </label>
+                <input
+                  style={{ width: "100%", padding: "10px", border: "1px solid #e5e7eb", borderRadius: "8px", fontSize: "14px" }}
+                  placeholder="e.g. 0.038"
+                  value={sellPriceEth}
+                  onChange={(e) => setSellPriceEth(e.target.value)}
+                />
+                <small style={{ color: "#6b7280", fontSize: "11px", marginTop: "4px", display: "block" }}>
+                  Max allowed: ~0.045 ETH (+20% cap above original ฿3,500)
+                </small>
+              </div>
+
+              <button
+                className="ref-btn-sell"
+                style={{ justifyContent: "center", marginTop: "8px" }}
+                onClick={handleListResale}
+                disabled={!isConnected || resaleIsPending || resaleIsConfirming}
+              >
+                {resaleIsPending || resaleIsConfirming ? "Submitting to Sepolia…" : "List Ticket on Smart Contract"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
