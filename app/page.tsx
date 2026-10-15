@@ -324,6 +324,7 @@ export default function Home() {
     setView("detail");
   };
 
+  const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
 
   const logout = async () => {
@@ -333,6 +334,7 @@ export default function Home() {
       console.warn("Wallet disconnect on logout:", e);
     }
     await createSupabaseBrowserClient().auth.signOut();
+    setAuthed(false);
     setUserName("");
     setView("home");
   };
@@ -357,20 +359,26 @@ export default function Home() {
           </div>
           <nav className="main-nav">
             <button onClick={() => setView("home")}>Events</button>
-            <button onClick={() => setView("tickets")}>
-              <TicketIcon size={14} /> My Tickets & Resale
-            </button>
-            <button onClick={() => setView("organizer")}>Organizer</button>
+            {authed && (
+              <>
+                <button onClick={() => setView("tickets")}>
+                  <TicketIcon size={14} /> My Tickets & Resale
+                </button>
+                <button onClick={() => setView("organizer")}>Organizer</button>
+              </>
+            )}
             <button className="wallet-link" onClick={() => setWallet(true)}>
-              <Wallet size={15} /> Connect wallet
+              <Wallet size={15} /> {isConnected && address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "Connect wallet"}
             </button>
             <button className="login" onClick={() => (authed ? logout() : setView("auth"))}>
               {!authReady ? "Checking…" : authed ? `${userName ? userName : "User"} · Log out` : "Log In / Sign Up"}
             </button>
           </nav>
-          <button className="mobile-ticket" onClick={() => setView("tickets")} aria-label="Tickets">
-            <TicketIcon size={20} />
-          </button>
+          {authed && (
+            <button className="mobile-ticket" onClick={() => setView("tickets")} aria-label="Tickets">
+              <TicketIcon size={20} />
+            </button>
+          )}
         </div>
       </header>
 
@@ -422,13 +430,13 @@ export default function Home() {
           />
         )}
         {view === "success" && (
-          <Success order={lastOrder} event={selected} onViewTickets={() => setView("tickets")} />
+          <Success order={lastOrder} event={selected} onViewTickets={() => setView(authed ? "tickets" : "auth")} />
         )}
         {view === "tickets" && (
-          <MyTickets event={selected} />
+          authed ? <MyTickets event={selected} /> : <Auth onDone={() => { setAuthed(true); setView("tickets"); }} />
         )}
         {view === "organizer" && (
-          <Organizer events={eventsList} />
+          authed ? <Organizer events={eventsList} /> : <Auth onDone={() => { setAuthed(true); setView("organizer"); }} />
         )}
       </main>
 
@@ -441,15 +449,21 @@ export default function Home() {
           <div>
             <strong>Marketplace</strong>
             <a onClick={() => setView("home")}>All Events</a>
-            <a onClick={() => setView("tickets")}>Resale Market</a>
-            <a onClick={() => setView("tickets")}>My Collection</a>
+            {authed && (
+              <>
+                <a onClick={() => setView("tickets")}>Resale Market</a>
+                <a onClick={() => setView("tickets")}>My Collection</a>
+              </>
+            )}
           </div>
-          <div>
-            <strong>Organizer Portal</strong>
-            <a onClick={() => setView("organizer")}>Check-in Scanner</a>
-            <a onClick={() => setView("organizer")}>Sales & Inventory</a>
-            <a>Verified Creator Guide</a>
-          </div>
+          {authed && (
+            <div>
+              <strong>Organizer Portal</strong>
+              <a onClick={() => setView("organizer")}>Check-in Scanner</a>
+              <a onClick={() => setView("organizer")}>Sales & Inventory</a>
+              <a>Verified Creator Guide</a>
+            </div>
+          )}
           <div>
             <strong>Smart Contract</strong>
             <a href={`https://sepolia.etherscan.io/address/${ticketContractAddress}`} target="_blank" rel="noreferrer">
