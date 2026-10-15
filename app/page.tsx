@@ -1686,19 +1686,12 @@ function MyTickets({ event }: { event: LiveEvent }) {
   const fetchTickets = async () => {
     setLoading(true);
     try {
+      // Query only genuine tickets issued to the authenticated user from Supabase database
       const list = await getMyTickets();
-      let localList: Ticket[] = [];
-      try {
-        localList = JSON.parse(window.localStorage.getItem("ut3_local_tickets") || "[]");
-      } catch (_) {}
-      const combined = [...list, ...localList.filter((lt) => !list.some((st) => st.id === lt.id))];
-      setTickets(combined);
+      setTickets(list);
     } catch (e) {
-      console.error(e);
-      try {
-        const localList: Ticket[] = JSON.parse(window.localStorage.getItem("ut3_local_tickets") || "[]");
-        setTickets(localList);
-      } catch (_) {}
+      console.error("Error fetching genuine tickets:", e);
+      setTickets([]);
     } finally {
       setLoading(false);
     }
@@ -1723,14 +1716,14 @@ function MyTickets({ event }: { event: LiveEvent }) {
           </button>
         </div>
 
-        {loading && <p>Loading your tickets from Supabase…</p>}
+        {loading && <p>Loading your genuine tickets from Supabase…</p>}
 
         {!loading && tickets.length === 0 && (
           <div className="empty-tickets">
             <TicketIcon size={24} />
             <div>
               <b>No tickets purchased on this account yet</b>
-              <span>Browse events to reserve and purchase your first ticket.</span>
+              <span>Browse events to reserve and purchase your genuine ticket.</span>
             </div>
           </div>
         )}
@@ -1740,7 +1733,7 @@ function MyTickets({ event }: { event: LiveEvent }) {
             const ev = t.ticket_types?.events || event;
             const isUsed = t.status === "USED";
             return (
-              <div className="my-ticket" key={t.id}>
+              <div className="my-ticket" key={t.id} style={{ alignItems: "center" }}>
                 <img src={ev.image_url || event.image_url || ""} alt={ev.title} />
                 <div>
                   <span className={isUsed ? "valid checked" : "valid"}>
@@ -1763,13 +1756,18 @@ function MyTickets({ event }: { event: LiveEvent }) {
                     {activeQr === t.id ? "Hide QR" : "Show QR / Verify ticket"}
                   </button>
                 </div>
-                <div className="qr-code">
+                <div className="qr-code" style={{ minWidth: "210px", minHeight: "210px", padding: "16px" }}>
                   {activeQr === t.id ? (
-                    <QRCodeSVG value={t.qr_payload || t.ticket_code} size={112} />
+                    <div style={{ background: "#fff", padding: "12px", borderRadius: "10px", border: "1px solid var(--line)", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                      <QRCodeSVG value={t.qr_payload || t.ticket_code} size={180} level="H" includeMargin />
+                      <small style={{ marginTop: "8px", fontWeight: "600", color: "var(--purple)", fontSize: "11px" }}>Official Entry Pass</small>
+                    </div>
                   ) : (
-                    "▦"
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} onClick={() => setActiveQr(t.id)}>
+                      <span style={{ fontSize: "64px", lineHeight: 1 }}>▦</span>
+                      <small style={{ marginTop: "6px" }}>Click to enlarge QR</small>
+                    </div>
                   )}
-                  <small>{activeQr === t.id ? "Scan to verify" : "NFT ticket"}</small>
                 </div>
               </div>
             );
