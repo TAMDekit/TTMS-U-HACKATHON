@@ -14,7 +14,10 @@ export default function UXSync() {
       const button = document.querySelector<HTMLButtonElement>(".main-nav .login");
       if (!button) return;
       currentUser = user;
-      const name = currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "User";
+      const storedName = window.localStorage.getItem("ut3_display_name") || "";
+      const name = currentUser?.user_metadata?.full_name || storedName || currentUser?.email?.split("@")[0] || "User";
+      if (currentUser && name) window.localStorage.setItem("ut3_display_name", name);
+      if (!currentUser) window.localStorage.removeItem("ut3_display_name");
       const label = currentUser ? `${name} · Log out` : "Log In / Sign Up";
       if (button.textContent !== label) button.textContent = label;
     };
