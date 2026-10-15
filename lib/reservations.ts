@@ -14,6 +14,10 @@ export async function reserveTickets(ticketTypeId: number, quantity: number) {
     p_ticket_type_id: ticketTypeId,
     p_quantity: quantity,
   });
-  if (error) throw error;
+  if (error) {
+    const err = new Error(error.message || "Failed to reserve tickets");
+    (err as unknown as { code?: string }).code = error.code;
+    throw err;
+  }
   return data as Reservation;
 }
