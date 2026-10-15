@@ -5,3 +5,25 @@ insert into events (title,slug,description,artist,venue,starts_at,image_url,stat
 insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'General Admission',4200,250,250 from events where slug='neon-horizon-live' on conflict (event_id,name) do nothing;
 insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Priority Entry',7800,60,60 from events where slug='neon-horizon-live' on conflict (event_id,name) do nothing;
 insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'VIP Experience',16000,20,20 from events where slug='neon-horizon-live' on conflict (event_id,name) do nothing;
+
+insert into events (title,slug,description,artist,venue,starts_at,image_url,status) values
+('Moonlit Frequencies','moonlit-frequencies','An intimate electronic night with immersive sound and atmospheric visuals.','Nara Sol','Lido Connect, Bangkok','2026-11-28T19:30:00+07:00','https://images.unsplash.com/photo-1571266028243-d220c7adf8a8?auto=format&fit=crop&w=1000&q=80','PUBLISHED'),
+('Sonic Bloom Festival','sonic-bloom-festival','A one-day celebration of indie pop, alt rock and new local voices.','Multiple artists','Wonder World, Bangkok','2026-12-06T15:00:00+07:00','https://images.unsplash.com/photo-1472653431158-6364773b2a56?auto=format&fit=crop&w=1000&q=80','PUBLISHED'),
+('Velvet Room Sessions','velvet-room-sessions','Small-room soul, jazz and R&B performed close to the audience.','Mira & The Rooms','The Jam Factory, Bangkok','2026-12-19T19:00:00+07:00','https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1000&q=80','PUBLISHED'),
+('Electric Bloom','electric-bloom','A high-energy live show where synth-pop meets cinematic stage design.','Lumen Youth','Samyan Mitrtown Hall, Bangkok','2027-01-09T20:00:00+07:00','https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=1000&q=80','PUBLISHED'),
+('Riverside Unplugged','riverside-unplugged','A relaxed acoustic concert beside the river with limited seating.','The Paper Planes','River City Bangkok','2027-01-16T18:00:00+07:00','https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=1000&q=80','PUBLISHED'),
+('After Hours: Tokyo','after-hours-tokyo','A late-night club experience built around house, garage and visual art.','Kaito / Yume','East Hall, Tokyo','2027-02-06T22:00:00+09:00','https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1000&q=80','PUBLISHED')
+on conflict (slug) do nothing;
+
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Standard',3500,300,300 from events where slug='moonlit-frequencies' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Front Row',6500,80,80 from events where slug='moonlit-frequencies' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Festival Pass',2900,1000,1000 from events where slug='sonic-bloom-festival' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Premium Pass',5900,150,150 from events where slug='sonic-bloom-festival' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'General',2400,180,180 from events where slug='velvet-room-sessions' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Table Seat',5200,40,40 from events where slug='velvet-room-sessions' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Entry',4200,500,500 from events where slug='electric-bloom' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'VIP Deck',8800,60,60 from events where slug='electric-bloom' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Acoustic Seat',2800,220,220 from events where slug='riverside-unplugged' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Lounge Seat',5600,35,35 from events where slug='riverside-unplugged' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Standard Entry',3800,450,450 from events where slug='after-hours-tokyo' on conflict (event_id,name) do nothing;
+insert into ticket_types (event_id,name,price_cents,total_supply,available_supply) select id,'Backstage',9900,50,50 from events where slug='after-hours-tokyo' on conflict (event_id,name) do nothing;

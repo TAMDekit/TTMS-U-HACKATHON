@@ -12,7 +12,7 @@ The NFT side uses Foundry. `contracts/ChainTicketResale.sol` contains a testnet-
 forge install OpenZeppelin/openzeppelin-contracts --no-commit
 forge install foundry-rs/forge-std --no-commit
 forge test
-forge script script/Deploy.s.sol --rpc-url $BASE_SEPOLIA_RPC_URL --broadcast
+forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast
 ```
 
 The current environment must have network access and a Solidity compiler cached before `forge test` can run. Use a testnet deployer key only through `FOUNDRY_PRIVATE_KEY` in a local ignored `.env`.
@@ -66,4 +66,4 @@ Never use real card data or mainnet funds. Keep all secrets in `.env.local`.
 4. Enable Email provider in Supabase Authentication.
 5. Never expose a service-role key in `NEXT_PUBLIC_*` variables.
 
-The browser auth client and Base Sepolia wallet provider are wired in the app. The live data adapter is in `lib/events.ts`; when Supabase is configured, database errors are surfaced instead of silently replacing a failed write with fake success.
+The browser auth client and Ethereum Sepolia wallet provider are wired in the app. The live data adapter is in `lib/events.ts`; when Supabase is configured, database errors are surfaced instead of silently replacing a failed write with fake success.
