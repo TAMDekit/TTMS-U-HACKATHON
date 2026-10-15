@@ -3,3 +3,89 @@
   color: #7c4dca;
   margin-right: 5px;
 }
+
+/* Mobile & Responsive Layout Enhancements */
+@media (max-width: 620px) {
+  .topbar {
+    height: auto !important;
+    min-height: 64px !important;
+    padding: 10px 0 !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 100 !important;
+    background: #ffffff !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  .nav-wrap {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px 12px !important;
+    padding: 0 16px !important;
+    height: auto !important;
+  }
+
+  /* Keep Search Bar inside standard document flow (NO absolute positioning overlap) */
+  .header-search {
+    order: 3 !important;
+    position: relative !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-top: 8px !important;
+    height: 40px !important;
+    background: #f3f4f6 !important;
+    border: 1px solid #e5e7eb !important;
+  }
+
+  .page-wrap {
+    padding: 16px !important;
+  }
+
+  .hero-banner {
+    height: auto !important;
+    min-height: 380px !important;
+  }
+
+  .hero-content {
+    padding: 44px 20px !important;
+  }
+
+  .hero-content h1 {
+    font-size: 34px !important;
+    line-height: 1.15 !important;
+  }
+
+  .hero-content p {
+    font-size: 14px !important;
+    margin-bottom: 20px !important;
+  }
+
+  .main-nav {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin-left: auto !important;
+  }
+
+  /* Compact top action items on mobile */
+  .lang-toggle-btn {
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+  }
+
+  .main-nav .login {
+    padding: 7px 12px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+    white-space: nowrap !important;
+  }
+
+  .logo {
+    font-size: 18px !important;
+  }
+}

@@ -396,6 +396,7 @@ export default function Home() {
 
             {/* Language Switcher Button */}
             <button
+              className="lang-toggle-btn"
               onClick={() => setLang(lang === "en" ? "th" : "en")}
               style={{
                 display: "inline-flex",
