@@ -105,19 +105,6 @@ export async function getMyTickets(): Promise<Ticket[]> {
   return (data as unknown as Ticket[]) ?? [];
 }
 
-export async function linkTicketNft(ticketId: string, tokenId: number, txHash?: string): Promise<void> {
-  const supabase = createSupabaseBrowserClient();
-  const { error } = await supabase.rpc("link_ticket_nft", {
-    p_ticket_id: ticketId,
-    p_token_id: tokenId,
-    p_tx_hash: txHash ?? null,
-  });
-
-  if (error) {
-    console.error("Error linking ticket NFT:", error);
-  }
-}
-
 export async function checkInTicket(ticketCode: string) {
   const supabase = createSupabaseBrowserClient();
   const { data, error } = await supabase.rpc("verify_and_check_in_ticket", {

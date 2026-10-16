@@ -2,7 +2,7 @@
 
 ทำงานต่อใน `C:\Users\TAM\Documents\Hackathon` โปรเจกต์ U Ticket 3 โดยรับบท Senior Full-stack Developer และ Web3 Engineer
 
-เป้าหมาย: ทำระบบจองบัตรและตลาด Resale NFT ให้ใช้งานจริงบน Supabase Cloud และ Base Sepolia testnet ห้ามใช้ Mainnet ห้ามใช้ mock ใน production path และห้ามเปิดเผย secret
+เป้าหมาย: ทำระบบจองบัตรและตลาด Resale NFT ให้ใช้งานจริงบน Supabase Cloud และ Ethereum Sepolia testnet ห้ามใช้ Mainnet ห้ามใช้ mock ใน production path และห้ามเปิดเผย secret
 
 ## กติกา
 
@@ -10,7 +10,7 @@
 - ใช้ Supabase Auth, Database และ RLS
 - ห้ามใช้ local PostgreSQL หรือ DBeaver
 - ห้ามใส่ service-role key/private key/seed phrase ใน client หรือ Git
-- ทุกธุรกรรม Web3 ต้องตรวจ chain เป็น Base Sepolia (84532)
+- ทุกธุรกรรม Web3 ต้องตรวจ chain เป็น Ethereum Sepolia (11155111)
 - ใช้ mock ได้เฉพาะ fallback เมื่อยังไม่มี contract address แต่ต้องแสดงสถานะชัดเจน
 - อย่าอ้างว่าทำเสร็จจนกว่าจะทดสอบจริง
 
@@ -44,7 +44,7 @@
 - My Tickets แสดง NFT status: Minting, Minted, Listed, Sold, Used
 - Ticket detail พร้อม QR และ tokenId
 - ปุ่ม List for resale, Cancel listing และ Buy resale
-- Wallet connect, wrong-network state และ switch-to-Base-Sepolia state
+- Wallet connect, wrong-network state และ switch-to-Ethereum-Sepolia state
 - Loading, empty, error, sold-out และ transaction-pending states
 
 ## Verification

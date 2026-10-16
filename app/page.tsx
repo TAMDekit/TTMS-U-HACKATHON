@@ -41,12 +41,13 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
-import { parseEther } from "viem";
+import { formatEther, parseEther } from "viem";
 import { QRCodeSVG } from "qrcode.react";
 import { ticketContractAbi, ticketContractAddress } from "../lib/ticket-contract";
 import { getPublishedEvents, type LiveEvent, type TicketType } from "../lib/events";
+import { formatPriceFromCents, type AppLanguage } from "../lib/currency";
 import { reserveTickets, type Reservation } from "../lib/reservations";
-import { completePurchase, getMyTickets, linkTicketNft, checkInTicket, type Ticket } from "../lib/orders";
+import { completePurchase, getMyTickets, checkInTicket, type Ticket } from "../lib/orders";
 
 const fallbackEvents: LiveEvent[] = [
   {
@@ -60,9 +61,9 @@ const fallbackEvents: LiveEvent[] = [
     image_url: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1200&q=80",
     description: "Official Asia Tour 2026. Live at Impact Challenger Hall 1, Muang Thong Thani, Nonthaburi. Experience iconic anthems on-stage with verified ERC-721 smart contract tickets.",
     ticket_types: [
-      { id: 991, event_id: 99, name: "Regular – Standing Zone A", price_cents: 350000, total_supply: 2000, available_supply: 12 },
-      { id: 992, event_id: 99, name: "Seats (Reserved Tier 1)", price_cents: 420000, total_supply: 800, available_supply: 0 },
-      { id: 993, event_id: 99, name: "VIP Lounge & Exclusive Soundcheck", price_cents: 750000, total_supply: 300, available_supply: 0 },
+      { id: 991, event_id: 99, name: "Regular – Standing Zone A", price_cents: 3500, total_supply: 2000, available_supply: 12 },
+      { id: 992, event_id: 99, name: "Seats (Reserved Tier 1)", price_cents: 4200, total_supply: 800, available_supply: 0 },
+      { id: 993, event_id: 99, name: "VIP Lounge & Exclusive Soundcheck", price_cents: 7500, total_supply: 300, available_supply: 0 },
     ],
   },
   {
@@ -262,9 +263,10 @@ export default function Home() {
   const [wallet, setWallet] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [walletHydrated, setWalletHydrated] = useState(false);
   const [userName, setUserName] = useState<string>("");
   const [currentReservation, setCurrentReservation] = useState<Reservation | null>(null);
-  const [lastOrder, setLastOrder] = useState<{ order_id: string; total_cents: number; quantity: number; ticket_ids: string[]; ticket_type_name: string } | null>(null);
+  const [lastOrder, setLastOrder] = useState<{ order_id: string; total_cents: number; quantity: number; ticket_ids: string[]; ticket_type_name: string; mint_warning?: string; recipient_wallet?: string } | null>(null);
 
   const loadEvents = async () => {
     try {
@@ -353,6 +355,10 @@ export default function Home() {
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
 
+  useEffect(() => {
+    setWalletHydrated(true);
+  }, []);
+
   const logout = async () => {
     try {
       disconnect();
@@ -413,11 +419,11 @@ export default function Home() {
               title="Switch language / เปลี่ยนภาษา"
             >
               <Globe size={14} />
-              {lang === "en" ? "TH / ฿" : "EN / $"}
+              {lang === "en" ? "EN / $" : "TH / THB"}
             </button>
 
             <button className="wallet-link" onClick={() => setWallet(true)}>
-              <Wallet size={15} /> {isConnected && address ? `${address.slice(0, 6)}…${address.slice(-4)}` : lang === "th" ? "เชื่อมต่อกระเป๋า" : "Connect wallet"}
+              <Wallet size={15} /> {walletHydrated && isConnected && address ? `${address.slice(0, 6)}…${address.slice(-4)}` : lang === "th" ? "เชื่อมต่อกระเป๋า" : "Connect wallet"}
             </button>
             <button className="login" onClick={() => (authed ? logout() : setView("auth"))}>
               {!authReady ? "Checking…" : authed ? `${userName ? userName : "User"} · ${lang === "th" ? "ออกจากระบบ" : "Log out"}` : lang === "th" ? "เข้าสู่ระบบ / ลงทะเบียน" : "Log In / Sign Up"}
@@ -433,7 +439,7 @@ export default function Home() {
 
       <main className="page-wrap">
         {view === "home" && (
-          <HomeView slide={slide} setSlide={setSlide} open={open} events={filtered} />
+          <HomeView slide={slide} setSlide={setSlide} open={open} events={filtered} lang={lang} />
         )}
         {view === "auth" && (
           <Auth onDone={() => { setAuthed(true); setView("home"); }} />
@@ -464,6 +470,7 @@ export default function Home() {
             reservation={currentReservation}
             back={() => setView("detail")}
             checkout={() => setView("checkout")}
+            lang={lang}
           />
         )}
         {view === "checkout" && (
@@ -473,6 +480,7 @@ export default function Home() {
             qty={qty}
             reservation={currentReservation}
             back={() => setView("cart")}
+            lang={lang}
             onSuccess={(orderData) => {
               setLastOrder(orderData);
               setView("success");
@@ -538,11 +546,13 @@ function HomeView({
   setSlide,
   open,
   events,
+  lang,
 }: {
   slide: number;
   setSlide: (n: number) => void;
   open: (e: LiveEvent) => void;
   events: LiveEvent[];
+  lang: AppLanguage;
 }) {
   const banners = [
     {
@@ -619,7 +629,7 @@ function HomeView({
 
         <div className="event-grid">
           {displayedEvents.map((e) => (
-            <Card key={e.id} event={e} open={open} />
+          <Card key={e.id} event={e} open={open} lang={lang} />
           ))}
         </div>
       </section>
@@ -627,17 +637,17 @@ function HomeView({
   );
 }
 
-function Card({ event, open }: { event: LiveEvent; open: (e: LiveEvent) => void }) {
-  const dateFormatted = new Date(event.starts_at).toLocaleDateString("en-US", {
+function Card({ event, open, lang }: { event: LiveEvent; open: (e: LiveEvent) => void; lang: AppLanguage }) {
+  const dateFormatted = new Date(event.starts_at).toLocaleDateString(lang === "th" ? "th-TH" : "en-US", {
     day: "numeric",
     month: "short",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
-  const minPrice = event.ticket_types && event.ticket_types.length > 0
-    ? Math.min(...event.ticket_types.map((t) => t.price_cents)) / 100
-    : 42;
+  const minPriceCents = event.ticket_types && event.ticket_types.length > 0
+    ? Math.min(...event.ticket_types.map((t) => t.price_cents))
+    : 4200;
 
   return (
     <button className="event-card" onClick={() => open(event)}>
@@ -651,7 +661,7 @@ function Card({ event, open }: { event: LiveEvent; open: (e: LiveEvent) => void 
           <span><CalendarDays size={14} />{dateFormatted}</span>
           <span><MapPin size={14} />{event.venue}</span>
         </div>
-        <strong>From ${minPrice.toFixed(2)}</strong>
+        <strong>{lang === "th" ? "เริ่มต้น " : "From "}{formatPriceFromCents(minPriceCents, lang)}</strong>
       </div>
     </button>
   );
@@ -727,28 +737,115 @@ function Detail({
   // Resale Listing Modal State
   const [showResaleModal, setShowResaleModal] = useState(false);
   const [showSellModal, setShowSellModal] = useState(false);
+  const [resaleAction, setResaleAction] = useState<"buy" | "list" | "cancel" | null>(null);
 
   // Wagmi contracts for on-chain Resale
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const { writeContract, data: resaleTxHash, isPending: resaleIsPending, error: resaleError } = useWriteContract();
   const { isLoading: resaleIsConfirming, isSuccess: resaleIsSuccess } = useWaitForTransactionReceipt({ hash: resaleTxHash });
 
   // On-chain Sell listing inputs
   const [sellTokenId, setSellTokenId] = useState("");
-  const [sellPriceEth, setSellPriceEth] = useState("0.038");
+  const [sellPriceEth, setSellPriceEth] = useState("0.0001");
+  const sellTokenIdBigInt = /^\d+$/.test(sellTokenId) ? BigInt(sellTokenId) : undefined;
 
-  // On-chain active listings data lookup for token IDs #1, #2, #3, #4
-  const listingTokens = [1, 2, 3];
+  const sellTokenOwner = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "ownerOf",
+    args: sellTokenIdBigInt === undefined ? undefined : [sellTokenIdBigInt],
+    query: { enabled: sellTokenIdBigInt !== undefined && sellTokenIdBigInt > BigInt(0) },
+  });
+  const sellTokenData = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "tickets",
+    args: sellTokenIdBigInt === undefined ? undefined : [sellTokenIdBigInt],
+    query: { enabled: sellTokenIdBigInt !== undefined && sellTokenIdBigInt > BigInt(0) },
+  });
+  const sellTokenMaximum = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "maxResalePrice",
+    args: sellTokenIdBigInt === undefined ? undefined : [sellTokenIdBigInt],
+    query: { enabled: sellTokenIdBigInt !== undefined && sellTokenIdBigInt > BigInt(0) },
+  });
+  const currentListing = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "listings",
+    args: sellTokenIdBigInt === undefined ? undefined : [sellTokenIdBigInt],
+    query: { enabled: sellTokenIdBigInt !== undefined && sellTokenIdBigInt > BigInt(0) },
+  });
+
+  const { data: nextTokenId, error: tokenCountError, isLoading: tokenCountLoading } = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "nextTokenId",
+  });
+  const firstListingTokenId = nextTokenId && nextTokenId > BigInt(101) ? nextTokenId - BigInt(100) : BigInt(1);
+  const listingTokenCount = nextTokenId
+    ? Number(nextTokenId > firstListingTokenId ? nextTokenId - firstListingTokenId : BigInt(0))
+    : 0;
+  const listingTokens = Array.from(
+    { length: Math.min(listingTokenCount, 100) },
+    (_, index) => Number(firstListingTokenId + BigInt(index)),
+  );
   const listingCalls = listingTokens.map((id) => ({
     address: ticketContractAddress,
     abi: ticketContractAbi,
     functionName: "listings" as const,
     args: [BigInt(id)] as const,
   }));
+  const listingOwnerCalls = listingTokens.map((id) => ({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "ownerOf" as const,
+    args: [BigInt(id)] as const,
+  }));
 
   const listingsData = useReadContracts({
     contracts: listingCalls,
+    query: { enabled: listingCalls.length > 0 },
   });
+  const listingOwnersData = useReadContracts({
+    contracts: listingOwnerCalls,
+    query: { enabled: listingOwnerCalls.length > 0 },
+  });
+  const activeChainListings = (listingsData.data ?? []).flatMap((result, index) => {
+    if (result.status !== "success" || !result.result) return [];
+    const [seller, priceWei] = result.result;
+    const ownerResult = listingOwnersData.data?.[index];
+    if (
+      seller === "0x0000000000000000000000000000000000000000" ||
+      priceWei <= BigInt(0) ||
+      ownerResult?.status !== "success" ||
+      ownerResult.result.toLowerCase() !== seller.toLowerCase()
+    ) return [];
+    return [{ tokenId: listingTokens[index], seller, priceWei }];
+  });
+
+  useEffect(() => {
+    if (resaleIsSuccess) {
+      void listingsData.refetch();
+      void listingOwnersData.refetch();
+      if (sellTokenIdBigInt !== undefined && sellTokenIdBigInt > BigInt(0)) {
+        void sellTokenOwner.refetch();
+        void sellTokenData.refetch();
+        void sellTokenMaximum.refetch();
+        void currentListing.refetch();
+      }
+    }
+  }, [
+    resaleIsSuccess,
+    sellTokenIdBigInt,
+    listingsData.refetch,
+    listingOwnersData.refetch,
+    sellTokenOwner.refetch,
+    sellTokenData.refetch,
+    sellTokenMaximum.refetch,
+    currentListing.refetch,
+  ]);
 
   const selectedType = ticketTypes[ticketIndex] || ticketTypes[0];
 
@@ -820,10 +917,15 @@ function Detail({
   };
 
   const handleBuyResale = (tokenId: number, priceWei: bigint) => {
+    if (chainId !== 11155111) {
+      setError(lang === "th" ? "กรุณาเปลี่ยนเครือข่ายเป็น Ethereum Sepolia" : "Switch your wallet to Ethereum Sepolia first.");
+      return;
+    }
     if (!isConnected) {
       alert(lang === "th" ? "กรุณาเชื่อมต่อ MetaMask หรือ Web3 Wallet ของคุณก่อนทำการสั่งซื้อ On-Chain" : "Please connect your MetaMask / Web3 wallet to execute on-chain purchase.");
       return;
     }
+    setResaleAction("buy");
     writeContract({
       address: ticketContractAddress,
       abi: ticketContractAbi,
@@ -834,22 +936,66 @@ function Detail({
   };
 
   const handleListResale = () => {
+    if (chainId !== 11155111) {
+      setError(lang === "th" ? "กรุณาเปลี่ยนเครือข่ายเป็น Ethereum Sepolia" : "Switch your wallet to Ethereum Sepolia first.");
+      return;
+    }
     if (!isConnected) {
       alert(lang === "th" ? "กรุณาเชื่อมต่อกระเป๋าก่อนทำรายการ" : "Please connect your wallet first.");
       return;
     }
-    if (!sellTokenId || !sellPriceEth) return;
-    const priceNum = parseFloat(sellPriceEth);
-    // Strict 30% cap check (Original ~0.038 ETH -> Max 30% = 0.0494 ETH)
-    if (priceNum > 0.0495) {
-      alert(lang === "th" ? "ราคาขายต่อเกินเพดานที่กำหนด! ระบบจำกัดเพดานราคาห้ามขายเกิน 30% (สูงสุดไม่เกิน 0.049 ETH) เพื่อป้องกันการเก็งกำไร" : "Price exceeds limit! Resale is strictly capped at +30% max (up to 0.049 ETH) to prevent scalping.");
+    if (!sellTokenId || !sellPriceEth) {
+      setError(lang === "th" ? "กรุณาระบุ Token ID และราคาขาย" : "Enter a token ID and resale price.");
       return;
     }
+    if (!/^\d+(\.\d{1,18})?$/.test(sellPriceEth)) {
+      setError(lang === "th" ? "กรุณาระบุราคา ETH ที่ถูกต้อง" : "Enter a valid ETH price.");
+      return;
+    }
+    const parsedPrice = parseEther(sellPriceEth);
+    if (!sellTokenIdBigInt || !sellTokenMaximum.data || parsedPrice <= BigInt(0) || parsedPrice > sellTokenMaximum.data) {
+      setError(lang === "th" ? "ราคาเกินเพดานที่ Smart Contract อนุญาต หรือไม่พบ Token" : "The price exceeds the on-chain cap or the token was not found.");
+      return;
+    }
+    if (!address || !sellTokenOwner.data || sellTokenOwner.data.toLowerCase() !== address.toLowerCase()) {
+      setError(lang === "th" ? "กระเป๋าที่เชื่อมต่อไม่ได้เป็นเจ้าของ NFT นี้" : "The connected wallet does not own this NFT.");
+      return;
+    }
+    if (sellTokenData.data?.[3]) {
+      setError(lang === "th" ? "ไม่สามารถลงขายบัตรที่ Check-in แล้ว" : "Used tickets cannot be listed for resale.");
+      return;
+    }
+    setError("");
+    setResaleAction("list");
     writeContract({
       address: ticketContractAddress,
       abi: ticketContractAbi,
       functionName: "list",
-      args: [BigInt(sellTokenId), parseEther(sellPriceEth)],
+      args: [sellTokenIdBigInt, parsedPrice],
+    });
+  };
+
+  const handleCancelResale = () => {
+    if (chainId !== 11155111) {
+      setError(lang === "th" ? "กรุณาเปลี่ยนเครือข่ายเป็น Ethereum Sepolia" : "Switch your wallet to Ethereum Sepolia first.");
+      return;
+    }
+    if (!isConnected || !sellTokenIdBigInt || !address) {
+      setError(lang === "th" ? "กรุณาเชื่อมต่อกระเป๋าและระบุ Token ID" : "Connect your wallet and enter a token ID.");
+      return;
+    }
+    const listingSeller = currentListing.data?.[0];
+    if (!listingSeller || listingSeller.toLowerCase() !== address.toLowerCase()) {
+      setError(lang === "th" ? "กระเป๋านี้ไม่ได้เป็นผู้ลงขายรายการดังกล่าว" : "Your wallet is not the seller of this listing.");
+      return;
+    }
+    setError("");
+    setResaleAction("cancel");
+    writeContract({
+      address: ticketContractAddress,
+      abi: ticketContractAbi,
+      functionName: "cancelListing",
+      args: [sellTokenIdBigInt],
     });
   };
 
@@ -1088,7 +1234,6 @@ function Detail({
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 {ticketTypes.map((tier, idx) => {
                   const isAvail = tier.available_supply > 0;
-                  const priceFormatted = (tier.price_cents / 100).toLocaleString();
                   const isSelected = ticketIndex === idx;
 
                   return (
@@ -1122,7 +1267,7 @@ function Detail({
                         <div className="ref-price-block">
                           <span className="ref-price-label">{lang === "th" ? "ราคาทางการ" : "OFFICIAL PRICE"}</span>
                           <span className={`ref-price-val ${isAvail ? "" : "sold"}`}>
-                            ฿{priceFormatted} <small>({tier.name.includes("VIP") ? "~0.081 ETH" : "~0.038 ETH"})</small>
+                            {formatPriceFromCents(tier.price_cents, lang)}
                           </span>
                         </div>
 
@@ -1169,14 +1314,14 @@ function Detail({
                   <h2 className="ref-tickets-title">{lang === "th" ? "ตลาดตั๋ว Resale แฟนเพลง" : "Fan Resale Exchange"}</h2>
                   <div className="ref-tickets-counts">
                     <span className="ref-avail-dot" />
-                    <span><b>3 {lang === "th" ? "รายการพร้อมซื้อ" : "verified listings"}</b></span>
+                    <span><b>{activeChainListings.length} {lang === "th" ? "รายการพร้อมซื้อ" : "on-chain listings"}</b></span>
                     <span>•</span>
-                    <span>Instant Sepolia transfer</span>
+                    <span>{lang === "th" ? "ซื้อขายบน Ethereum Sepolia" : "Ethereum Sepolia"}</span>
                   </div>
                 </div>
                 <div className="ref-cap-badge" style={{ background: "#eff6ff", borderColor: "#bfdbfe", color: "#1e40af" }}>
                   <Lock size={12} />
-                  {lang === "th" ? "เพดานราคาห้ามเกิน +30%" : "Capped at Original + 30% Max"}
+                  {lang === "th" ? "เพดานราคา +10%" : "Maximum +10% markup"}
                 </div>
               </div>
 
@@ -1205,48 +1350,68 @@ function Detail({
                   <strong style={{ fontSize: "13px", color: "#5b21b6" }}>{lang === "th" ? "มีตั๋วคอนเสิร์ตแต่ติดธุระไปไม่ได้?" : "Have a ticket but cannot attend?"}</strong>
                   <span style={{ fontSize: "11px", color: "#6b7280", display: "block" }}>{lang === "th" ? "นำมาส่งต่อให้แฟนเพลงตัวจริงอย่างปลอดภัย รับเงินเข้ากระเป๋าทันที" : "Resell securely to real fans. Automatic on-chain payment."}</span>
                 </div>
-                <button className="ref-btn-sell" style={{ padding: "8px 16px", fontSize: "12px" }} onClick={() => setShowSellModal(true)}>
+                <button className="ref-btn-sell" style={{ padding: "8px 16px", fontSize: "12px" }} onClick={() => {
+                  setResaleAction(null);
+                  setError("");
+                  setShowSellModal(true);
+                }}>
                   <Tag size={14} />
                   {lang === "th" ? "ลงขายตั๋ว" : "List Ticket"}
                 </button>
               </div>
 
-              {/* List of active listings */}
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {[
-                  { tokenId: 1, tierName: "Regular – Standing Zone A", seller: "0x7F2A...3B91", priceThb: "฿3,500", priceEth: "0.038 ETH", priceWei: parseEther("0.038"), markup: "0% (Original Price)" },
-                  { tokenId: 2, tierName: "Regular – Standing Zone A", seller: "0x4C19...8D22", priceThb: "฿3,990", priceEth: "0.043 ETH", priceWei: parseEther("0.043"), markup: "+14% Markup (Fair)" },
-                  { tokenId: 3, tierName: "Seats (Reserved Tier 1)", seller: "0x98E1...F5A3", priceThb: "฿4,550", priceEth: "0.049 ETH", priceWei: parseEther("0.049"), markup: "+30% Max Limit Cap" },
-                ].map((listing) => (
+                {(tokenCountLoading || listingsData.isLoading || listingOwnersData.isLoading) && (
+                  <p>{lang === "th" ? "กำลังอ่านรายการจาก Smart Contract…" : "Loading listings from the smart contract…"}</p>
+                )}
+                {!tokenCountLoading && !listingsData.isLoading && !listingOwnersData.isLoading && (tokenCountError || listingsData.error || listingOwnersData.error) && (
+                  <p className="auth-error">
+                    {lang === "th" ? "อ่านรายการบนเครือข่ายไม่สำเร็จ กรุณาลองใหม่" : "Could not load on-chain listings. Please retry."}
+                  </p>
+                )}
+                {!tokenCountLoading && !listingsData.isLoading && !listingOwnersData.isLoading && !tokenCountError && !listingsData.error && !listingOwnersData.error && activeChainListings.length === 0 && (
+                  <p>{lang === "th" ? "ยังไม่มีรายการบัตร Resale บน Smart Contract" : "There are no active resale listings on the smart contract yet."}</p>
+                )}
+                {listingTokens.length > 0 && (
+                  <small style={{ color: "#6b7280" }}>
+                    {lang === "th"
+                      ? "แสดงรายการจาก Token 100 ใบล่าสุดที่ออกบนเครือข่าย"
+                      : "Showing listings for the latest 100 minted tokens."}
+                  </small>
+                )}
+                {activeChainListings.map((listing) => {
+                  const isSeller = Boolean(address && address.toLowerCase() === listing.seller.toLowerCase());
+                  return (
                   <div key={listing.tokenId} className="ref-listing-item" style={{ background: "#fff", padding: "16px", borderRadius: "12px", border: "1px solid #e5e7eb" }}>
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <strong style={{ fontSize: "14px", color: "#111827" }}>Ticket NFT #{listing.tokenId}</strong>
-                        <span className="ref-badge-avail" style={{ fontSize: "9px" }}>VERIFIED RESALE</span>
+                        <span className="ref-badge-avail" style={{ fontSize: "9px" }}>{lang === "th" ? "ยืนยันบนบล็อกเชน" : "ON-CHAIN VERIFIED"}</span>
                       </div>
                       <div style={{ fontSize: "12px", color: "#4b5563", marginTop: "3px" }}>
-                        {listing.tierName} • {listing.markup}
-                      </div>
-                      <div style={{ fontSize: "10px", color: "#9ca3af", marginTop: "2px" }}>
-                        Seller: {listing.seller}
+                        {lang === "th" ? "ผู้ขาย" : "Seller"}: {listing.seller.slice(0, 6)}…{listing.seller.slice(-4)}
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
                       <div style={{ textAlign: "right" }}>
-                        <div style={{ fontWeight: "800", color: "#23085a", fontSize: "16px" }}>{listing.priceThb}</div>
-                        <div style={{ fontSize: "11px", color: "#6b7280" }}>{listing.priceEth}</div>
+                        <div style={{ fontWeight: "800", color: "#23085a", fontSize: "16px" }}>{formatEther(listing.priceWei)} ETH</div>
                       </div>
                       <button
                         className="ref-btn-listings"
                         style={{ padding: "8px 16px" }}
                         onClick={() => handleBuyResale(listing.tokenId, listing.priceWei)}
-                        disabled={resaleIsPending || resaleIsConfirming}
+                        disabled={!isConnected || chainId !== 11155111 || isSeller || resaleIsPending || resaleIsConfirming}
                       >
-                        {resaleIsPending || resaleIsConfirming ? "Processing…" : lang === "th" ? "ซื้อตั๋ว NFT" : "Buy NFT"}
+                        {resaleIsPending || resaleIsConfirming
+                          ? (lang === "th" ? "กำลังทำรายการ…" : "Processing…")
+                          : isSeller
+                            ? (lang === "th" ? "รายการของคุณ" : "Your listing")
+                            : lang === "th" ? "ซื้อตั๋ว NFT" : "Buy NFT"}
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1261,8 +1426,8 @@ function Detail({
             <div className="ref-security-text">
               <strong>100% Anti-Scalper & Anti-Fraud Guarantee.</strong>{" "}
               {lang === "th"
-                ? "ตั๋วทุกใบออกเป็น ERC-721 NFT บน Ethereum Sepolia ตรวจสอบความเป็นเจ้าของได้จริง เพดานราคา Resale ควบคุมไม่เกิน 30% พร้อม Dynamic QR Code สแกนผ่านประตูทางเข้าได้สมบูรณ์แบบ"
-                : "Every ticket is minted as a secure ERC-721 NFT on Ethereum Sepolia. Resale is strictly capped at +30% max, with dynamic box office QR codes preventing fraudulent copies."}
+                ? "ตั๋ว NFT ตรวจสอบเจ้าของและรายการขายจาก Ethereum Sepolia โดย Smart Contract จำกัดราคาขายต่อไม่เกิน 10% จากราคาเดิม"
+                : "NFT ownership and resale listings are verified on Ethereum Sepolia. The smart contract caps resale prices at 10% above the original price."}
             </div>
           </div>
         </div>
@@ -1322,13 +1487,17 @@ function Detail({
 
             <p style={{ fontSize: "12px", color: "#6b7280", margin: "0 0 16px" }}>
               {lang === "th"
-                ? "ลงขายตั๋ว ERC-721 บนเครือข่าย Sepolia โดยระบบจำกัดเพดานราคาห้ามขายเกิน 30% ของราคาหน้าตั๋วเดิม เพื่อคุ้มครองแฟนเพลงและขจัดปัญหาตั๋วผี"
-                : "List your ERC-721 ticket on Sepolia. Price is strictly capped at max +30% above original price to eliminate scalping."}
+                ? "ลงขายตั๋ว ERC-721 บนเครือข่าย Sepolia โดย Smart Contract จำกัดราคาไม่เกิน 10% จากราคาเดิม"
+                  : "List your ERC-721 ticket on Sepolia. The smart contract enforces a maximum 10% markup."}
             </p>
 
-            {resaleIsSuccess && (
+            {resaleIsSuccess && resaleAction && (
               <div style={{ padding: "12px", background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "8px", marginBottom: "12px", color: "#065f46", fontSize: "13px" }}>
-                ✓ {lang === "th" ? "ลิสต์ตั๋วขึ้น Smart Contract บนเครือข่าย Sepolia สำเร็จ!" : "Ticket successfully listed on Sepolia contract!"}
+                ✓ {resaleAction === "cancel"
+                  ? (lang === "th" ? "ยกเลิกรายการขายบน Sepolia สำเร็จ!" : "Listing cancelled successfully on Sepolia.")
+                  : resaleAction === "buy"
+                    ? (lang === "th" ? "ซื้อบัตร NFT บน Sepolia สำเร็จ!" : "NFT ticket purchased successfully on Sepolia.")
+                    : (lang === "th" ? "ลิสต์ตั๋วขึ้น Smart Contract บนเครือข่าย Sepolia สำเร็จ!" : "Ticket successfully listed on Sepolia contract.")}
               </div>
             )}
 
@@ -1351,25 +1520,65 @@ function Detail({
                 </label>
                 <input
                   style={{ width: "100%", padding: "10px", border: "1px solid #e5e7eb", borderRadius: "8px", fontSize: "14px" }}
-                  placeholder="e.g. 0.038 - max 0.049 ETH"
+                  placeholder={lang === "th" ? "เช่น 0.0001 ETH" : "e.g. 0.0001 ETH"}
                   value={sellPriceEth}
                   onChange={(e) => setSellPriceEth(e.target.value)}
                 />
                 <small style={{ color: "#2563eb", fontSize: "11px", marginTop: "4px", display: "block", fontWeight: "600" }}>
-                  {lang === "th" ? "เพดานราคาสูงสุดที่อนุญาต: 0.049 ETH (ห้ามเกิน 30% ของราคาเดิม ฿3,500)" : "Max allowed: ~0.049 ETH (+30% cap above original ฿3,500)"}
+                  {lang === "th"
+                    ? sellTokenMaximum.data
+                      ? `ราคาสูงสุดจาก Smart Contract: ${formatEther(sellTokenMaximum.data)} ETH`
+                      : "ระบุ Token ID เพื่ออ่านเพดานราคาจาก Smart Contract"
+                    : sellTokenMaximum.data
+                      ? `On-chain maximum: ${formatEther(sellTokenMaximum.data)} ETH`
+                      : "Enter a token ID to read the on-chain price cap"}
                 </small>
+                {sellTokenIdBigInt !== undefined && sellTokenIdBigInt > BigInt(0) && (
+                  <small style={{ color: "#6b7280", fontSize: "11px", marginTop: "4px", display: "block" }}>
+                    {sellTokenOwner.isLoading || sellTokenData.isLoading
+                      ? (lang === "th" ? "กำลังตรวจสอบเจ้าของและสถานะบัตร…" : "Checking token ownership and ticket status…")
+                      : !sellTokenOwner.data
+                        ? (lang === "th" ? "ไม่พบ Token นี้บนเครือข่าย Sepolia" : "Token not found on Sepolia.")
+                        : sellTokenData.data?.[3]
+                          ? (lang === "th" ? "บัตรนี้ถูก Check-in แล้ว ไม่สามารถขายต่อได้" : "This ticket is checked in and cannot be resold.")
+                          : Boolean(address && currentListing.data?.[0]?.toLowerCase() === address.toLowerCase())
+                            ? (lang === "th" ? "Token นี้มีรายการขายของคุณอยู่แล้ว" : "Your listing for this token is active.")
+                            : ""}
+                  </small>
+                )}
               </div>
 
               <button
                 className="ref-btn-sell"
                 style={{ justifyContent: "center", marginTop: "8px" }}
                 onClick={handleListResale}
-                disabled={!isConnected || resaleIsPending || resaleIsConfirming}
+                disabled={!isConnected || chainId !== 11155111 || resaleIsPending || resaleIsConfirming}
               >
                 {resaleIsPending || resaleIsConfirming
                   ? (lang === "th" ? "กำลังส่งธุรกรรมไปยัง Sepolia…" : "Submitting to Sepolia…")
                   : (lang === "th" ? "ลิสต์ตั๋วขึ้น Smart Contract" : "List Ticket on Smart Contract")}
               </button>
+              {address && currentListing.data?.[0]?.toLowerCase() === address.toLowerCase() && (
+                <button
+                  className="outline-button"
+                  style={{ justifyContent: "center" }}
+                  onClick={handleCancelResale}
+                  disabled={!isConnected || chainId !== 11155111 || resaleIsPending || resaleIsConfirming}
+                >
+                  {lang === "th" ? "ยกเลิกรายการขาย" : "Cancel active listing"}
+                </button>
+              )}
+              {chainId !== 11155111 && (
+                <small className="auth-error">
+                  {lang === "th" ? "กรุณาเลือก Ethereum Sepolia ก่อนทำธุรกรรม" : "Switch to Ethereum Sepolia before submitting a transaction."}
+                </small>
+              )}
+              {resaleError && <small className="auth-error">{resaleError.message.slice(0, 180)}</small>}
+              {resaleTxHash && (
+                <a href={`https://sepolia.etherscan.io/tx/${resaleTxHash}`} target="_blank" rel="noreferrer">
+                  {lang === "th" ? "ดูธุรกรรมบน Sepolia Etherscan ↗" : "View transaction on Sepolia Etherscan ↗"}
+                </a>
+              )}
             </div>
           </div>
         </div>
@@ -1385,6 +1594,7 @@ function Cart({
   reservation,
   back,
   checkout,
+  lang,
 }: {
   event: LiveEvent;
   ticketType: TicketType;
@@ -1392,6 +1602,7 @@ function Cart({
   reservation: Reservation | null;
   back: () => void;
   checkout: () => void;
+  lang: AppLanguage;
 }) {
   const [timeLeft, setTimeLeft] = useState("");
 
@@ -1410,9 +1621,9 @@ function Cart({
     return () => clearInterval(interval);
   }, [reservation]);
 
-  const subtotal = (ticketType.price_cents * qty) / 100;
-  const fee = subtotal * 0.08;
-  const total = subtotal + fee;
+  const subtotalCents = ticketType.price_cents * qty;
+  const feeCents = Math.round(subtotalCents * 0.08);
+  const totalCents = subtotalCents + feeCents;
 
   return (
     <div className="checkout-page">
@@ -1439,15 +1650,15 @@ function Cart({
         </div>
         <div className="price-line">
           <span>Tickets</span>
-          <b>${subtotal.toFixed(2)}</b>
+          <b>{formatPriceFromCents(subtotalCents, lang)}</b>
         </div>
         <div className="price-line">
           <span>Service fee <small>8%</small></span>
-          <b>${fee.toFixed(2)}</b>
+          <b>{formatPriceFromCents(feeCents, lang)}</b>
         </div>
         <div className="total-line">
           <span>Total</span>
-          <b>${total.toFixed(2)}</b>
+          <b>{formatPriceFromCents(totalCents, lang)}</b>
         </div>
         <button className="purple-button full" onClick={checkout}>
           Proceed to Checkout <ArrowRight size={16} />
@@ -1463,6 +1674,7 @@ function Checkout({
   qty,
   reservation,
   back,
+  lang,
   onSuccess,
 }: {
   event: LiveEvent;
@@ -1470,7 +1682,8 @@ function Checkout({
   qty: number;
   reservation: Reservation | null;
   back: () => void;
-  onSuccess: (orderData: { order_id: string; total_cents: number; quantity: number; ticket_ids: string[]; ticket_type_name: string }) => void;
+  lang: AppLanguage;
+  onSuccess: (orderData: { order_id: string; total_cents: number; quantity: number; ticket_ids: string[]; ticket_type_name: string; mint_warning?: string; recipient_wallet?: string }) => void;
 }) {
   const { address } = useAccount();
   const [busy, setBusy] = useState(false);
@@ -1481,58 +1694,68 @@ function Checkout({
     if (address) setBuyerWallet(address);
   }, [address]);
 
-  const subtotal = (ticketType.price_cents * qty) / 100;
-  const total = (subtotal * 1.08).toFixed(2);
+  const subtotalCents = ticketType.price_cents * qty;
+  const totalCents = Math.round(subtotalCents * 1.08);
 
   const handlePay = async () => {
     if (!reservation) {
       setError("No active reservation found. Please choose your tickets again.");
       return;
     }
+    if (!reservation.id.startsWith("res-demo-") && !/^0x[a-fA-F0-9]{40}$/.test(buyerWallet)) {
+      setError("Enter a valid recipient wallet address before completing checkout.");
+      return;
+    }
     setBusy(true);
     setError("");
 
     try {
+      let mintWarning: string | undefined;
       let order: { order_id: string; total_cents: number; quantity: number; ticket_ids: string[]; ticket_type_name: string };
 
       if (reservation.id.startsWith("res-demo-")) {
         // Instant simulated completion for demo catalog items
-        const demoTicketId = "ticket-demo-" + Date.now();
-        const demoCode = "UT3-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+        const demoTickets = Array.from({ length: qty }, () => {
+          const id = "ticket-demo-" + Date.now() + "-" + Math.random().toString(36).substring(2, 8);
+          const code = "UT3-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+          return { id, code };
+        });
         order = {
           order_id: "demo-" + Date.now().toString(36),
-          total_cents: ticketType.price_cents * qty,
+          total_cents: Math.round(ticketType.price_cents * qty * 1.08),
           quantity: qty,
-          ticket_ids: [demoTicketId],
+          ticket_ids: demoTickets.map((ticket) => ticket.id),
           ticket_type_name: ticketType.name,
         };
 
         // Persist demo ticket to local store for instant My Tickets & Resale testing
         try {
           const localStored = JSON.parse(window.localStorage.getItem("ut3_local_tickets") || "[]");
-          localStored.unshift({
-            id: demoTicketId,
-            order_id: order.order_id,
-            ticket_type_id: ticketType.id,
-            ticket_code: demoCode,
-            qr_payload: `ut3://ticket/${demoCode}/${order.order_id}`,
-            status: "VALID",
-            token_id: null,
-            created_at: new Date().toISOString(),
-            ticket_types: {
-              id: ticketType.id,
-              name: ticketType.name,
-              price_cents: ticketType.price_cents,
-              event_id: event.id,
-              events: {
-                id: event.id,
-                title: event.title,
-                venue: event.venue,
-                starts_at: event.starts_at,
-                image_url: event.image_url,
+          for (const ticket of demoTickets) {
+            localStored.unshift({
+              id: ticket.id,
+              order_id: order.order_id,
+              ticket_type_id: ticketType.id,
+              ticket_code: ticket.code,
+              qr_payload: `ut3://ticket/${ticket.code}/${order.order_id}`,
+              status: "VALID",
+              token_id: null,
+              created_at: new Date().toISOString(),
+              ticket_types: {
+                id: ticketType.id,
+                name: ticketType.name,
+                price_cents: ticketType.price_cents,
+                event_id: event.id,
+                events: {
+                  id: event.id,
+                  title: event.title,
+                  venue: event.venue,
+                  starts_at: event.starts_at,
+                  image_url: event.image_url,
+                },
               },
-            },
-          });
+            });
+          }
           window.localStorage.setItem("ut3_local_tickets", JSON.stringify(localStored));
         } catch (storageErr) {
           console.warn("Storage notice:", storageErr);
@@ -1541,40 +1764,39 @@ function Checkout({
         order = await completePurchase(reservation.id, buyerWallet || "0x0000000000000000000000000000000000000000");
       }
 
-      if (buyerWallet && buyerWallet.startsWith("0x") && buyerWallet.length === 42) {
+      if (!reservation.id.startsWith("res-demo-")) {
         try {
-          const res = await fetch("/api/mint", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: buyerWallet,
-              eventId: event.id,
-              ticketType: ticketType.id,
-              orderId: Date.now(),
-              metadataURI: `ipfs://u-ticket-3/event-${event.id}-order-${order.order_id}.json`,
-            }),
-          });
-          const mintData = await res.json();
-          if (mintData.success && order.ticket_ids && order.ticket_ids.length > 0) {
-            if (!reservation.id.startsWith("res-demo-")) {
-              await linkTicketNft(order.ticket_ids[0], Number(mintData.tokenId), mintData.transactionHash);
-            } else {
-              // Update local ticket with minted token ID
-              try {
-                const localStored = JSON.parse(window.localStorage.getItem("ut3_local_tickets") || "[]");
-                if (localStored.length > 0 && localStored[0].id === order.ticket_ids[0]) {
-                  localStored[0].token_id = Number(mintData.tokenId);
-                  window.localStorage.setItem("ut3_local_tickets", JSON.stringify(localStored));
-                }
-              } catch (_) {}
+          const { data: { session }, error: sessionError } = await createSupabaseBrowserClient().auth.getSession();
+          if (sessionError) throw sessionError;
+          if (!session) throw new Error("Sign in again before minting your ticket.");
+
+          for (const ticketId of order.ticket_ids) {
+            const res = await fetch("/api/mint", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({ to: buyerWallet, ticketId }),
+            });
+            const mintData = await res.json();
+            if (!res.ok || !mintData.success || !mintData.tokenId) {
+              throw new Error(mintData.error || "NFT minting could not be confirmed.");
+            }
+
+            if (!mintData.transactionHash && !mintData.alreadyMinted) {
+              throw new Error("Mint transaction hash was not returned.");
             }
           }
         } catch (mintErr) {
           console.warn("Minting automation notice:", mintErr);
+          mintWarning = mintErr instanceof Error
+            ? `Your order is confirmed, but NFT minting could not be completed: ${mintErr.message}`
+            : "Your order is confirmed, but NFT minting could not be completed.";
         }
       }
 
-      onSuccess(order);
+      onSuccess({ ...order, mint_warning: mintWarning, recipient_wallet: buyerWallet });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Payment processing failed");
     } finally {
@@ -1604,14 +1826,16 @@ function Checkout({
           <TicketIcon size={18} />
           <span>
             <b>Payment Method</b>
-            <small>Test Checkout · Real order & NFT ticket recorded on completion</small>
+            <small>Demo checkout · No real payment is taken; test order records are created on completion.</small>
           </span>
         </div>
 
         {error && <small className="auth-error">{error}</small>}
 
         <button className="purple-button full" onClick={handlePay} disabled={busy}>
-          {busy ? "Finalizing order and issuing tickets…" : `Confirm & Pay $${total}`}
+          {busy
+            ? (lang === "th" ? "กำลังยืนยันคำสั่งซื้อทดลองและออกบัตร…" : "Finalizing demo order and issuing tickets…")
+            : `${lang === "th" ? "ยืนยันคำสั่งซื้อทดลอง" : "Complete Test Order"} · ${formatPriceFromCents(totalCents, lang)}`}
           {!busy && <ArrowRight size={16} />}
         </button>
       </div>
@@ -1624,19 +1848,64 @@ function Success({
   event,
   onViewTickets,
 }: {
-  order: { order_id: string; total_cents: number; quantity: number; ticket_ids: string[]; ticket_type_name: string } | null;
+  order: { order_id: string; total_cents: number; quantity: number; ticket_ids: string[]; ticket_type_name: string; mint_warning?: string; recipient_wallet?: string } | null;
   event: LiveEvent;
   onViewTickets: () => void;
 }) {
+  const [mintBusy, setMintBusy] = useState(false);
+  const [mintError, setMintError] = useState("");
+  const [mintComplete, setMintComplete] = useState(false);
+
+  const retryMint = async () => {
+    if (!order?.recipient_wallet) return;
+    setMintBusy(true);
+    setMintError("");
+    try {
+      const { data: { session }, error: sessionError } = await createSupabaseBrowserClient().auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session) throw new Error("Sign in again before retrying NFT minting.");
+
+      for (const ticketId of order.ticket_ids) {
+        const response = await fetch("/api/mint", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ to: order.recipient_wallet, ticketId }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || "NFT minting could not be confirmed.");
+        }
+      }
+      setMintComplete(true);
+    } catch (error) {
+      setMintError(error instanceof Error ? error.message : "NFT mint retry failed.");
+    } finally {
+      setMintBusy(false);
+    }
+  };
+
   return (
     <div className="success">
       <div>✓</div>
       <span className="eyebrow purple">ORDER CONFIRMED</span>
       <h1>You&apos;re going to<br /><em>{event.title}</em></h1>
       <p>
-        Your digital ticket is ready! Order #{order?.order_id?.slice(0, 8) || "SUCCESS"} ·
+        {order?.mint_warning ? "Your order is confirmed." : "Your digital ticket is ready!"}
+        {" "}Order #{order?.order_id?.slice(0, 8) || "SUCCESS"} ·
         {order?.quantity || 1} {order?.ticket_type_name || "Tickets"}
       </p>
+      {order?.mint_warning && !mintComplete && (
+        <>
+          <p role="status" className="auth-error">{mintError || order.mint_warning}</p>
+          <button className="purple-button" onClick={retryMint} disabled={mintBusy || !order.recipient_wallet}>
+            {mintBusy ? "Retrying NFT mint…" : "Retry NFT mint"}
+          </button>
+        </>
+      )}
+      {mintComplete && <p role="status">Your NFT ticket mint is confirmed.</p>}
       <button className="purple-button" onClick={onViewTickets}>
         View in My Tickets <TicketIcon size={16} />
       </button>
@@ -1940,9 +2209,12 @@ function OwnedTicketCollection({ event }: { event: LiveEvent }) {
 }
 
 function ResalePanel() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const [tokenId, setTokenId] = useState("");
   const [price, setPrice] = useState("0.00011");
+  const parsedTokenId = /^\d+$/.test(tokenId) && BigInt(tokenId) > BigInt(0) ? BigInt(tokenId) : undefined;
+  const priceIsValid = /^\d+(\.\d{1,18})?$/.test(price);
+  const priceWei = priceIsValid ? parseEther(price) : undefined;
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading, isSuccess } = useWaitForTransactionReceipt({ hash });
 
@@ -1950,39 +2222,75 @@ function ResalePanel() {
     address: ticketContractAddress,
     abi: ticketContractAbi,
     functionName: "ownerOf",
-    args: tokenId ? [BigInt(tokenId)] : undefined,
-    query: { enabled: Boolean(tokenId) },
+    args: parsedTokenId === undefined ? undefined : [parsedTokenId],
+    query: { enabled: parsedTokenId !== undefined },
   });
 
   const original = useReadContract({
     address: ticketContractAddress,
     abi: ticketContractAbi,
     functionName: "originalPriceWei",
-    args: tokenId ? [BigInt(tokenId)] : undefined,
-    query: { enabled: Boolean(tokenId) },
+    args: parsedTokenId === undefined ? undefined : [parsedTokenId],
+    query: { enabled: parsedTokenId !== undefined },
+  });
+  const maximum = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "maxResalePrice",
+    args: parsedTokenId === undefined ? undefined : [parsedTokenId],
+    query: { enabled: parsedTokenId !== undefined },
+  });
+  const ticket = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "tickets",
+    args: parsedTokenId === undefined ? undefined : [parsedTokenId],
+    query: { enabled: parsedTokenId !== undefined },
+  });
+  const listing = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "listings",
+    args: parsedTokenId === undefined ? undefined : [parsedTokenId],
+    query: { enabled: parsedTokenId !== undefined },
   });
 
-  const list = async () => {
-    if (!tokenId) return;
+  useEffect(() => {
+    if (isSuccess) {
+      void owner.refetch();
+      void original.refetch();
+      void maximum.refetch();
+      void ticket.refetch();
+      void listing.refetch();
+    }
+  }, [isSuccess, owner.refetch, original.refetch, maximum.refetch, ticket.refetch, listing.refetch]);
+
+  const list = () => {
+    if (chainId !== 11155111 || !isConnected || !address || parsedTokenId === undefined) return;
+    if (!owner.data || owner.data.toLowerCase() !== address.toLowerCase()) return;
+    if (ticket.data?.[3]) return;
+    if (priceWei === undefined || priceWei <= BigInt(0) || !maximum.data || priceWei > maximum.data) return;
     writeContract({
       address: ticketContractAddress,
       abi: ticketContractAbi,
       functionName: "list",
-      args: [BigInt(tokenId), parseEther(price)],
+      args: [parsedTokenId, priceWei],
     });
   };
 
   const cancel = () => {
-    if (!tokenId) return;
+    if (chainId !== 11155111 || !isConnected || !address || parsedTokenId === undefined) return;
+    if (!listing.data?.[0] || listing.data[0].toLowerCase() !== address.toLowerCase()) return;
     writeContract({
       address: ticketContractAddress,
       abi: ticketContractAbi,
       functionName: "cancelListing",
-      args: [BigInt(tokenId)],
+      args: [parsedTokenId],
     });
   };
 
   const owns = Boolean(address && owner.data && String(owner.data).toLowerCase() === address.toLowerCase());
+  const isListedByUser = Boolean(address && listing.data?.[0]?.toLowerCase() === address.toLowerCase());
 
   return (
     <div className="resale-panel">
@@ -2000,7 +2308,7 @@ function ResalePanel() {
         />
         <input
           aria-label="Resale price"
-          placeholder="ETH price (max +10%)"
+          placeholder="ETH price (contract cap)"
           value={price}
           onChange={(e) => setPrice(e.target.value)}
         />
@@ -2008,32 +2316,43 @@ function ResalePanel() {
 
       {original.data && (
         <small>
-          Original price: {Number(original.data) / 1e18} ETH · Maximum resale limit: +10%
+          Original price: {formatEther(original.data)} ETH · Maximum resale price: {maximum.data ? `${formatEther(maximum.data)} ETH` : "Loading…"}
         </small>
       )}
 
       <div className="resale-actions">
         <button
           className="purple-button"
-          disabled={!isConnected || !owns || isPending || isLoading}
+          disabled={!isConnected || chainId !== 11155111 || !owns || !ticket.data || ticket.data[3] || !maximum.data || priceWei === undefined || priceWei <= BigInt(0) || (maximum.data !== undefined && priceWei > maximum.data) || isPending || isLoading}
           onClick={list}
         >
           {isPending || isLoading ? "Confirming on chain…" : "List for resale"}
         </button>
         <button
           className="outline-button"
-          disabled={!isConnected || !owns || isPending || isLoading}
+          disabled={!isConnected || chainId !== 11155111 || !isListedByUser || isPending || isLoading}
           onClick={cancel}
         >
           Cancel listing
         </button>
       </div>
 
+      {chainId !== 11155111 && <small className="auth-error">Switch to Ethereum Sepolia before submitting a transaction.</small>}
+      {ticket.data?.[3] && <small className="auth-error">Used tickets cannot be listed for resale.</small>}
+      {!priceIsValid && <small className="auth-error">Enter a valid ETH amount with up to 18 decimal places.</small>}
+      {priceWei !== undefined && priceWei <= BigInt(0) && <small className="auth-error">Resale price must be greater than zero.</small>}
+      {maximum.data && priceWei !== undefined && priceWei > maximum.data && (
+        <small className="auth-error">The price exceeds the on-chain 10% resale cap.</small>
+      )}
       {owner.error && <small className="auth-error">Token not found or not yet minted.</small>}
       {!owns && tokenId && owner.data && (
         <small className="auth-error">Your connected wallet is not the owner of token #{tokenId}.</small>
       )}
-      {(hash || isSuccess) && (
+      {listing.data?.[0] && listing.data[0] !== "0x0000000000000000000000000000000000000000" && (
+        <small>Current listing: {formatEther(listing.data[1])} ETH</small>
+      )}
+      {isSuccess && <small className="valid">Transaction confirmed on Sepolia.</small>}
+      {hash && (
         <a href={`https://sepolia.etherscan.io/tx/${hash}`} target="_blank" rel="noreferrer">
           View transaction on Sepolia Etherscan ↗
         </a>
@@ -2044,31 +2363,62 @@ function ResalePanel() {
 }
 
 function ResaleBuyerPanel() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const [tokenId, setTokenId] = useState("");
-  const { data: listing, error: listingError } = useReadContract({
+  const parsedTokenId = /^\d+$/.test(tokenId) && BigInt(tokenId) > BigInt(0) ? BigInt(tokenId) : undefined;
+  const { data: listing, error: listingError, isLoading: listingLoading, refetch: refetchListing } = useReadContract({
     address: ticketContractAddress,
     abi: ticketContractAbi,
     functionName: "listings",
-    args: tokenId ? [BigInt(tokenId)] : undefined,
-    query: { enabled: Boolean(tokenId) },
+    args: parsedTokenId === undefined ? undefined : [parsedTokenId],
+    query: { enabled: parsedTokenId !== undefined },
+  });
+  const owner = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "ownerOf",
+    args: parsedTokenId === undefined ? undefined : [parsedTokenId],
+    query: { enabled: parsedTokenId !== undefined },
+  });
+  const ticket = useReadContract({
+    address: ticketContractAddress,
+    abi: ticketContractAbi,
+    functionName: "tickets",
+    args: parsedTokenId === undefined ? undefined : [parsedTokenId],
+    query: { enabled: parsedTokenId !== undefined },
   });
 
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading, isSuccess } = useWaitForTransactionReceipt({ hash });
+  useEffect(() => {
+    if (isSuccess) {
+      void refetchListing();
+      void owner.refetch();
+      void ticket.refetch();
+    }
+  }, [isSuccess, refetchListing, owner.refetch, ticket.refetch]);
 
   const seller = listing?.[0] as `0x${string}` | undefined;
   const price = listing?.[1] as bigint | undefined;
-  const available = Boolean(seller && seller !== "0x0000000000000000000000000000000000000000" && price && price > BigInt(0));
+  const available = Boolean(
+    seller &&
+    seller !== "0x0000000000000000000000000000000000000000" &&
+    price &&
+    price > BigInt(0) &&
+    owner.data &&
+    owner.data.toLowerCase() === seller.toLowerCase() &&
+    ticket.data &&
+    !ticket.data[3],
+  );
   const sameOwner = Boolean(address && seller && address.toLowerCase() === seller.toLowerCase());
 
   const buy = () => {
-    if (!tokenId || !price) return;
+    if (chainId !== 11155111 || !isConnected || !parsedTokenId || !available || !price || sameOwner) return;
     writeContract({
       address: ticketContractAddress,
       abi: ticketContractAbi,
       functionName: "buy",
-      args: [BigInt(tokenId)],
+      args: [parsedTokenId],
       value: price,
     });
   };
@@ -2093,16 +2443,17 @@ function ResaleBuyerPanel() {
       {available && (
         <div className="listing-summary">
           <span>Listed by <b>{seller?.slice(0, 6)}…{seller?.slice(-4)}</b></span>
-          <strong>{price ? Number(price) / 1e18 : 0} ETH</strong>
+          <strong>{price ? formatEther(price) : "0"} ETH</strong>
         </div>
       )}
 
       {tokenId && listingError && <small className="auth-error">This token is not available or has no active listing.</small>}
-      {tokenId && !available && !listingError && <small>No active listing found for token #{tokenId}.</small>}
+      {tokenId && (listingLoading || owner.isLoading || ticket.isLoading) && <small>Verifying the on-chain listing…</small>}
+      {tokenId && !listingLoading && !owner.isLoading && !ticket.isLoading && !available && !listingError && <small>No active listing found for token #{tokenId}.</small>}
 
       <button
         className="purple-button"
-        disabled={!isConnected || !available || sameOwner || isPending || isLoading}
+        disabled={!isConnected || chainId !== 11155111 || !available || sameOwner || isPending || isLoading}
         onClick={buy}
       >
         {isPending || isLoading ? "Confirming purchase…" : isSuccess ? "Ticket purchased ✓" : "Buy resale ticket"}
@@ -2110,7 +2461,13 @@ function ResaleBuyerPanel() {
 
       {sameOwner && <small>You cannot buy your own listing.</small>}
       {!isConnected && <small>Connect MetaMask before purchasing.</small>}
-      {(hash || isSuccess) && (
+      {chainId !== 11155111 && <small className="auth-error">Switch to Ethereum Sepolia before purchasing.</small>}
+      {listing && seller && owner.data && owner.data.toLowerCase() !== seller.toLowerCase() && (
+        <small className="auth-error">This listing is stale because the seller no longer owns the NFT.</small>
+      )}
+      {ticket.data?.[3] && <small className="auth-error">This ticket has already been checked in.</small>}
+      {isSuccess && <small className="valid">Purchase confirmed on Sepolia.</small>}
+      {hash && (
         <a href={`https://sepolia.etherscan.io/tx/${hash}`} target="_blank" rel="noreferrer">
           View purchase on Sepolia Etherscan ↗
         </a>

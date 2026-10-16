@@ -2,9 +2,11 @@
 
 ## Current MVP architecture
 
-The product can run in UI/mock mode without local PostgreSQL or DBeaver. Real shared data is designed for Supabase (hosted) using the SQL in `supabase/schema.sql`. Configure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` before enabling the real data adapter.
+The product supports a local demo flow and Supabase-backed accounts, reservations, orders, and tickets. Configure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or the legacy anon key) and apply the SQL migrations in `supabase/` to enable shared data.
 
-The NFT side uses Foundry. `contracts/ChainTicketResale.sol` contains a testnet-only ERC-721 ticket with minting, listing, resale, creator royalty, ownership checks, and used-ticket protection. The resale market is intentionally transparent: listing and sale events are emitted on-chain. Never deploy with a mainnet key.
+The NFT side uses Foundry. `contracts/ChainTicketResale.sol` contains a testnet-only ERC-721 ticket with minting, listing, resale, creator royalty, ownership checks, and used-ticket protection. The server mint route requires an authenticated user, a valid ticket belonging to that user's paid order, and an atomic one-at-a-time mint claim. Configure `PRIVATE_KEY` and `SUPABASE_SERVICE_ROLE_KEY` only as server-side environment variables; never use a mainnet key or expose either in `NEXT_PUBLIC_*`.
+
+**Checkout is simulated.** The current flow creates test orders and does not charge a card or verify an external payment. Do not accept real customers, funds, or production orders until a payment provider and verified payment callback have replaced the mock checkout.
 
 ### Foundry
 
@@ -26,13 +28,7 @@ The current environment must have network access and a Solidity compiler cached 
 - Seller receives the remainder.
 - Listing and sale are visible through emitted events.
 
-Web3 concert ticketing concept for hackathon demos. This first implementation is **Phase 1: UI + mock data** and intentionally uses no real payment, wallet, or blockchain transaction.
-
-## Current audit
-
-- The workspace was empty: no framework, source files, package manifest, or dependencies were present.
-- The public Eventpop landing page was reviewed read-only for broad UX patterns only: curated event sections, upcoming/popular grouping, event discovery, and a separate organizer/service information area. Authenticated ticket checkout and account surfaces were not publicly verifiable.
-- The implementation does not use Eventpop names, logo, assets, copy, brand colors, or source code.
+This is a hackathon demo targeting Ethereum Sepolia. UI demo tickets are stored locally; Supabase-backed ticket orders and optional Sepolia NFT minting require the configured services above. No real payment is processed.
 
 ## Run
 
@@ -49,21 +45,19 @@ ChainTicket uses a dark “signal / live moment” visual language: electric cya
 
 ## Next phases
 
-1. Add Prisma schema and PostgreSQL seed data.
-2. Add Auth.js roles: USER, ORGANIZER, ADMIN.
-3. Add transactional reservation locks with expiry.
-4. Add Stripe test-mode checkout and order/ticket records.
-5. Add QR verification and single-use check-in.
-6. Add wagmi/viem mock wallet mode, then ERC-721/1155 testnet minting.
+1. Integrate a payment provider with signed, verified callbacks before treating orders as paid.
+2. Assign organizer roles through a trusted admin process and scope check-in permissions to assigned events.
+3. Persist and pin real NFT metadata; the current URI is only a demo placeholder.
+4. Add production-grade monitoring, rate limits, and managed key custody before any real-user deployment.
 
-Never use real card data or mainnet funds. Keep all secrets in `.env.local`.
+Never use real card data or mainnet funds. Keep local secrets in the ignored `.env.local`; use a managed secret store for deployment and never expose server secrets through `NEXT_PUBLIC_*`.
 
 ## Supabase real-data setup
 
-1. Create a Supabase project and copy its URL and anon key into `.env.local` using `.env.example`.
-2. Run `supabase/schema.sql` in Supabase SQL Editor.
-3. Run `supabase/seed.sql` to create real event and ticket rows.
-4. Enable Email provider in Supabase Authentication.
+1. Create a Supabase project and copy its URL and publishable/anon key into `.env.local` using `.env.example`.
+2. Run `supabase/schema.sql`, `supabase/mvp-migration.sql`, then `supabase/purchase-flow.sql` in Supabase SQL Editor.
+3. Run `supabase/seed.sql` to create event and ticket rows.
+4. Enable Email provider in Supabase Authentication and assign organizer roles only through a trusted admin process.
 5. Never expose a service-role key in `NEXT_PUBLIC_*` variables.
 
 The browser auth client and Ethereum Sepolia wallet provider are wired in the app. The live data adapter is in `lib/events.ts`; when Supabase is configured, database errors are surfaced instead of silently replacing a failed write with fake success.

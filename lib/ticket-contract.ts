@@ -9,6 +9,7 @@ export const ticketContractAbi = [
   { type: "function", name: "originalPriceWei", stateMutability: "view", inputs: [{ name: "tokenId", type: "uint256" }], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "maxResalePrice", stateMutability: "view", inputs: [{ name: "tokenId", type: "uint256" }], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "listings", stateMutability: "view", inputs: [{ name: "tokenId", type: "uint256" }], outputs: [{ name: "seller", type: "address" }, { name: "priceWei", type: "uint256" }] },
+  { type: "function", name: "royaltyBps", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint96" }] },
   { type: "function", name: "list", stateMutability: "nonpayable", inputs: [{ name: "tokenId", type: "uint256" }, { name: "priceWei", type: "uint256" }], outputs: [] },
   { type: "function", name: "cancelListing", stateMutability: "nonpayable", inputs: [{ name: "tokenId", type: "uint256" }], outputs: [] },
   { type: "function", name: "buy", stateMutability: "payable", inputs: [{ name: "tokenId", type: "uint256" }], outputs: [] },

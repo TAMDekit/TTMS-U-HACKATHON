@@ -48,10 +48,14 @@ create policy "users can update own profile" on public.profiles for update using
 drop policy if exists "users can insert own profile" on public.profiles;
 create policy "users can insert own profile" on public.profiles for insert with check (auth.uid() = id);
 
+revoke insert, update on public.profiles from authenticated;
+grant insert (id, full_name, wallet_address) on public.profiles to authenticated;
+grant update (full_name, wallet_address) on public.profiles to authenticated;
+
 drop policy if exists "users can view own orders" on public.orders;
 create policy "users can view own orders" on public.orders for select using (auth.uid() = user_id);
 drop policy if exists "users can create own orders" on public.orders;
-create policy "users can create own orders" on public.orders for insert with check (auth.uid() = user_id);
+revoke insert on public.orders from authenticated;
 
 drop policy if exists "users can view own order items" on public.order_items;
 create policy "users can view own order items" on public.order_items for select
@@ -60,9 +64,8 @@ using (exists (select 1 from public.orders o where o.id = order_id and o.user_id
 drop policy if exists "users can view own reservations" on public.reservations;
 create policy "users can view own reservations" on public.reservations for select using (auth.uid() = user_id);
 drop policy if exists "users can create own reservations" on public.reservations;
-create policy "users can create own reservations" on public.reservations for insert with check (auth.uid() = user_id);
+revoke insert, update on public.reservations from authenticated;
 drop policy if exists "users can cancel own reservations" on public.reservations;
-create policy "users can cancel own reservations" on public.reservations for update using (auth.uid() = user_id);
 
 create or replace function public.create_reservation(p_ticket_type_id bigint, p_quantity integer)
 returns public.reservations

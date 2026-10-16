@@ -5,6 +5,11 @@ create table if not exists tickets (id uuid primary key default gen_random_uuid(
 create table if not exists listings (id uuid primary key default gen_random_uuid(), ticket_id uuid unique references tickets(id), seller_wallet text not null, price_cents integer not null check(price_cents > 0), status text not null default 'ACTIVE', created_at timestamptz not null default now());
 create table if not exists check_ins (id uuid primary key default gen_random_uuid(), ticket_id uuid unique references tickets(id), checked_in_by uuid references auth.users(id), checked_in_at timestamptz not null default now());
 alter table events enable row level security; alter table ticket_types enable row level security; alter table tickets enable row level security; alter table listings enable row level security;
-create policy "public can view published events" on events for select using (status='PUBLISHED');
-create policy "public can view ticket types" on ticket_types for select using (true);
-create policy "public can view active listings" on listings for select using (status='ACTIVE');
+drop policy if exists "public can view published events" on public.events;
+create policy "public can view published events" on public.events for select using (status='PUBLISHED');
+
+drop policy if exists "public can view ticket types" on public.ticket_types;
+create policy "public can view ticket types" on public.ticket_types for select using (true);
+
+drop policy if exists "public can view active listings" on public.listings;
+create policy "public can view active listings" on public.listings for select using (status='ACTIVE');

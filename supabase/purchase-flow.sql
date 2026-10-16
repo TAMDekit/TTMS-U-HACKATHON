@@ -3,6 +3,8 @@
 
 -- 1. Policies for tickets
 alter table public.tickets enable row level security;
+alter table public.tickets add column if not exists nft_minting_at timestamptz;
+alter table public.tickets add column if not exists nft_tx_hash text;
 
 drop policy if exists "users can view own tickets" on public.tickets;
 create policy "users can view own tickets" on public.tickets for select
@@ -14,19 +16,21 @@ using (
 );
 
 drop policy if exists "public can view tickets for resale lookup" on public.tickets;
-create policy "public can view tickets for resale lookup" on public.tickets for select
-using (true);
 
 -- 2. Policies for check_ins
 alter table public.check_ins enable row level security;
 
 drop policy if exists "organizers or staff can view check_ins" on public.check_ins;
 create policy "organizers or staff can view check_ins" on public.check_ins for select
-using (auth.uid() is not null);
+using (
+  exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid() and p.role in ('ORGANIZER', 'ADMIN')
+  )
+);
 
 drop policy if exists "authenticated users can insert check_ins" on public.check_ins;
-create policy "authenticated users can insert check_ins" on public.check_ins for insert
-with check (auth.uid() is not null);
+revoke insert, update, delete on public.check_ins from authenticated;
 
 -- 3. Atomic Order Completion RPC: complete_ticket_purchase
 -- Validates reservation, locks stock, creates order & order_item, generates tickets, and marks reservation COMPLETED
@@ -87,7 +91,7 @@ begin
   where id = v_res.ticket_type_id;
 
   -- 3. Calculate total
-  v_total_cents := v_ticket_type.price_cents * v_res.quantity;
+  v_total_cents := round(v_ticket_type.price_cents * v_res.quantity * 1.08)::integer;
 
   -- 4. Create Order
   insert into public.orders (user_id, status, total_cents, wallet_address, transaction_hash)
@@ -131,7 +135,42 @@ $$;
 revoke all on function public.complete_ticket_purchase(uuid, text, text) from public;
 grant execute on function public.complete_ticket_purchase(uuid, text, text) to authenticated;
 
--- 4. Link token_id to ticket
+-- 4. Atomically reserve a valid ticket for a single in-flight mint.
+create or replace function public.claim_ticket_nft_mint(p_ticket_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user uuid := auth.uid();
+  v_claimed boolean := false;
+begin
+  if v_user is null then raise exception 'AUTH_REQUIRED'; end if;
+
+  update public.tickets t
+  set nft_minting_at = now()
+  from public.orders o
+  where t.id = p_ticket_id
+    and t.order_id = o.id
+    and o.user_id = v_user
+    and o.status = 'PAID'
+    and t.status = 'VALID'
+    and t.token_id is null
+    and (
+      t.nft_minting_at is null
+      or t.nft_minting_at < now() - interval '30 minutes'
+    )
+  returning true into v_claimed;
+
+  return coalesce(v_claimed, false);
+end;
+$$;
+
+revoke all on function public.claim_ticket_nft_mint(uuid) from public;
+grant execute on function public.claim_ticket_nft_mint(uuid) to authenticated;
+
+-- 5. Link the confirmed chain result using server credentials only.
 create or replace function public.link_ticket_nft(
   p_ticket_id uuid,
   p_token_id bigint,
@@ -143,26 +182,30 @@ security definer
 set search_path = public
 as $$
 declare
-  v_user uuid := auth.uid();
+  v_updated integer;
 begin
-  if v_user is null then raise exception 'AUTH_REQUIRED'; end if;
+  if auth.role() is distinct from 'service_role' then
+    raise exception 'SERVICE_ROLE_REQUIRED';
+  end if;
 
   update public.tickets t
-  set token_id = p_token_id
+  set token_id = p_token_id, nft_minting_at = null, nft_tx_hash = p_tx_hash
   from public.orders o
-  where t.id = p_ticket_id and t.order_id = o.id and o.user_id = v_user;
+  where t.id = p_ticket_id and t.order_id = o.id and t.token_id is null and t.nft_minting_at is not null;
+  get diagnostics v_updated = row_count;
+  if v_updated = 0 then raise exception 'TICKET_NOT_CLAIMED_OR_ALREADY_LINKED'; end if;
 
   update public.orders o
   set transaction_hash = coalesce(p_tx_hash, o.transaction_hash)
   from public.tickets t
-  where t.id = p_ticket_id and t.order_id = o.id and o.user_id = v_user;
+  where t.id = p_ticket_id and t.order_id = o.id;
 end;
 $$;
 
-revoke all on function public.link_ticket_nft(uuid, bigint, text) from public;
-grant execute on function public.link_ticket_nft(uuid, bigint, text) to authenticated;
+revoke all on function public.link_ticket_nft(uuid, bigint, text) from public, authenticated;
+grant execute on function public.link_ticket_nft(uuid, bigint, text) to service_role;
 
--- 5. Ticket Check-in function
+-- 6. Ticket Check-in function
 create or replace function public.verify_and_check_in_ticket(p_ticket_code text)
 returns json
 language plpgsql
@@ -176,6 +219,12 @@ declare
   v_type public.ticket_types;
 begin
   if v_user is null then raise exception 'AUTH_REQUIRED'; end if;
+  if not exists (
+    select 1 from public.profiles p
+    where p.id = v_user and p.role in ('ORGANIZER', 'ADMIN')
+  ) then
+    raise exception 'ORGANIZER_REQUIRED';
+  end if;
 
   select * into v_ticket from public.tickets
   where ticket_code = p_ticket_code
@@ -187,6 +236,9 @@ begin
 
   if v_ticket.status = 'USED' then
     return json_build_object('success', false, 'error', 'ALREADY_USED', 'ticket_id', v_ticket.id);
+  end if;
+  if v_ticket.status <> 'VALID' then
+    return json_build_object('success', false, 'error', 'TICKET_NOT_VALID', 'ticket_id', v_ticket.id);
   end if;
 
   select * into v_type from public.ticket_types where id = v_ticket.ticket_type_id;
