@@ -26,7 +26,7 @@ export async function getPublishedEvents(): Promise<LiveEvent[]> {
   const supabase = createSupabaseBrowserClient();
   const { data, error } = await supabase
     .from("events")
-    .select("id,title,slug,description,artist,venue,starts_at,image_url,category,ticket_types(*)")
+    .select("id,title,slug,description,artist,venue,starts_at,image_url,ticket_types(*)")
     .eq("status", "PUBLISHED")
     .order("starts_at", { ascending: true });
 

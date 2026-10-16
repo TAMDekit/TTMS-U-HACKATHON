@@ -28,6 +28,14 @@ The current environment must have network access and a Solidity compiler cached 
 - Seller receives the remainder.
 - Listing and sale are visible through emitted events.
 
+## On-chain Marketplace (Sepolia)
+
+The `/marketplace` page has three views: primary ticket sales, active fan resale listings, and tickets owned by the connected wallet. A buyer connects an injected wallet, switches to Ethereum Sepolia, and confirms the exact ETH amount shown by the contract. A primary purchase mints the ERC-721 directly to the buyer; the configured contract owner receives the primary-sale proceeds. A resale buyer pays the exact listing price, and the seller receives the proceeds minus the contract royalty.
+
+The configured address may still point to an earlier contract without primary-sale support. Before using these flows, deploy the updated `UTicket3` contract to Sepolia, set `NEXT_PUBLIC_TICKET_CONTRACT_ADDRESS` to that address, and rebuild/restart the app. Connect the deploying owner wallet and use the Primary tickets tab to configure a sale for a published event and ticket type (ETH price and supply are stored on-chain). Buyers can purchase from the Primary tickets tab without a Supabase login. Ticket holders can list or cancel NFTs in My tickets; buyers who missed the primary allocation can purchase from Resale listings.
+
+This is testnet functionality only. Sepolia ETH is not fiat or mainnet ETH. The existing home-page cart/checkout remains simulated and must not be presented as paid. Do not accept real customer funds until a production deployment, verified payment path, inventory synchronization, and security review are complete.
+
 This is a hackathon demo targeting Ethereum Sepolia. UI demo tickets are stored locally; Supabase-backed ticket orders and optional Sepolia NFT minting require the configured services above. No real payment is processed.
 
 ## Run
